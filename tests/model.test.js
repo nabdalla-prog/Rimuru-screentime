@@ -175,3 +175,186 @@ test("recentDays handles month boundaries", () => {
   deepEqual(out.map((d) => d.key), ["2026-02-27", "2026-02-28", "2026-03-01", "2026-03-02"])
   assert.ok(out.every((d) => d.rel === 0))
 })
+
+// ---- Phase 1: identity, settings, goal, midnight ------------------------------
+
+test("displayName keeps deliberate names, prettifies plain ids", () => {
+  assert.equal(M.displayName("Half-Life 2"), "Half-Life 2")
+  assert.equal(M.displayName("Stardew Valley"), "Stardew Valley")
+  assert.equal(M.displayName("web:app.slack.com"), "app.slack.com")
+  assert.equal(M.displayName("web:web.whatsapp.com"), "web.whatsapp.com")
+  assert.equal(M.displayName("nvim"), "Nvim")
+  assert.equal(M.displayName("web:"), "Unknown")
+})
+
+test("terminal, steam and system window classes", () => {
+  assert.equal(M.isTerminalClass("com.mitchellh.ghostty"), true)
+  assert.equal(M.isTerminalClass("Alacritty"), true)
+  assert.equal(M.isTerminalClass("brave-browser"), false)
+  assert.equal(M.isTerminalClass(""), false)
+  assert.equal(M.isSteamClass("steam_app_730"), true)
+  assert.equal(M.isSteamClass("steam_app_battlenet"), true)
+  assert.equal(M.isSteamClass("steam"), false)
+  assert.equal(M.isSystemWindow("org.omarchy.screensaver"), true)
+  assert.equal(M.isSystemWindow("xdg-desktop-portal-gtk"), true)
+  assert.equal(M.isSystemWindow("foot"), false)
+})
+
+test("canonicalApp: resolved command wins, shells become 'terminal'", () => {
+  assert.equal(M.canonicalApp("com.mitchellh.ghostty", "nvim"), "nvim")
+  assert.equal(M.canonicalApp("foot", "bash"), "terminal")
+  assert.equal(M.canonicalApp("foot", "ZSH"), "terminal")
+  assert.equal(M.canonicalApp("steam_app_730", "Counter-Strike 2"), "Counter-Strike 2")
+  assert.equal(M.canonicalApp("foot", ""), "foot")
+})
+
+test("canonicalApp: browsers fold to one name", () => {
+  assert.equal(M.canonicalApp("brave-browser"), "brave")
+  assert.equal(M.canonicalApp("Brave-Browser"), "brave")
+  assert.equal(M.canonicalApp("zen-bin"), "zen")
+  assert.equal(M.canonicalApp("google-chrome"), "google-chrome")
+  // A browser started from a terminal still folds.
+  assert.equal(M.canonicalApp("foot", "brave"), "brave")
+  assert.equal(M.canonicalApp("org.gnome.Nautilus"), "org.gnome.Nautilus")
+  assert.equal(M.canonicalApp("", ""), "")
+  assert.equal(M.canonicalApp(null, null), "")
+})
+
+test("canonicalApp: Chromium web apps fold to their host across profiles", () => {
+  assert.equal(M.canonicalApp("chrome-web.whatsapp.com__-Default"), "web:web.whatsapp.com")
+  assert.equal(M.canonicalApp("chrome-web.whatsapp.com__-Profile_2"), "web:web.whatsapp.com")
+  assert.equal(M.canonicalApp("brave-github.com__notifications-Default"), "web:github.com")
+  assert.equal(M.canonicalApp("brave-app.slack.com"), "web:app.slack.com")
+  // Plain browser classes are not web apps.
+  assert.equal(M.canonicalApp("brave-browser"), "brave")
+  assert.equal(M.canonicalApp("chromium-browser"), "chromium-browser")
+})
+
+test("parseList accepts arrays and strings, lowercases and de-duplicates", () => {
+  deepEqual(M.parseList("Steam, rofi\nWofi ,, rofi"), ["steam", "rofi", "wofi"])
+  deepEqual(M.parseList(["Steam", " rofi ", "", "STEAM"]), ["steam", "rofi"])
+  deepEqual(M.parseList(undefined), [])
+  deepEqual(M.parseList(42), [])
+})
+
+test("parseNames accepts objects, 'a=B' strings and arrays", () => {
+  deepEqual(M.parseNames("zen=Browser, foot = Terminal"), { zen: "Browser", foot: "Terminal" })
+  deepEqual(M.parseNames({ Zen: "Browser", bad: "", "": "x" }), { zen: "Browser" })
+  deepEqual(M.parseNames(["zen=Browser", "nonsense"]), { zen: "Browser" })
+  deepEqual(M.parseNames(null), {})
+  assert.equal(M.parseNames("a=" + "x".repeat(100)).a.length, 40)
+})
+
+test("parseGoal clamps to 0-24 whole hours", () => {
+  assert.equal(M.parseGoal(6), 6)
+  assert.equal(M.parseGoal("8"), 8)
+  assert.equal(M.parseGoal(2.9), 2)
+  assert.equal(M.parseGoal(-3), 0)
+  assert.equal(M.parseGoal("abc"), 0)
+  assert.equal(M.parseGoal(undefined), 0)
+  assert.equal(M.parseGoal(99), 24)
+})
+
+test("displayLabel prefers a custom name by key or by readable name", () => {
+  assert.equal(M.displayLabel("zen", { zen: "Browser" }), "Browser")
+  assert.equal(M.displayLabel("brave", { "brave": "Web" }), "Web")
+  assert.equal(M.displayLabel("steam_app_1", { "steam app 1": "Game" }), "Game")
+  assert.equal(M.displayLabel("zen", {}), "Zen")
+  assert.equal(M.displayLabel("zen"), "Zen")
+})
+
+test("isIgnored matches key, class, readable or custom name, case-insensitively", () => {
+  assert.equal(M.isIgnored([], {}, "rofi", "rofi"), false)
+  assert.equal(M.isIgnored(["rofi"], {}, "rofi", "rofi"), true)
+  assert.equal(M.isIgnored(["brave browser"], {}, "brave-browser", "brave-browser"), true)
+  assert.equal(M.isIgnored(["launcher"], { rofi: "Launcher" }, "rofi", "rofi"), true)
+  assert.equal(M.isIgnored(["web.whatsapp.com"], {}, "web:web.whatsapp.com", ""), true)
+  assert.equal(M.isIgnored(["rofi"], {}, "nvim", "foot"), false)
+  assert.equal(M.isIgnored(["foot"], {}, "nvim", "foot"), true)
+})
+
+test("visibleDay drops ignored apps and recomputes the total", () => {
+  const day = { total: 600, apps: { rofi: 100, nvim: 300, brave: 200 } }
+  const v = M.visibleDay(day, ["rofi"], {})
+  deepEqual(v, { total: 500, apps: { nvim: 300, brave: 200 } })
+  assert.equal(M.visibleDay(day, [], {}), day)
+  assert.equal(M.visibleDay(null, ["rofi"], {}), null)
+  assert.equal(day.total, 600) // input untouched
+})
+
+test("goalProgress", () => {
+  assert.equal(M.goalProgress(1000, 0).enabled, false)
+  const half = M.goalProgress(3 * 3600000, 6)
+  assert.equal(half.enabled, true)
+  assert.equal(half.ratio, 0.5)
+  assert.equal(half.reached, false)
+  assert.equal(half.remainingMs, 3 * 3600000)
+  const done = M.goalProgress(7 * 3600000, 6)
+  assert.equal(done.reached, true)
+  assert.equal(done.ratio, 1)
+  assert.equal(done.remainingMs, 0)
+  assert.equal(M.goalProgress(6 * 3600000, 6).reached, true)
+})
+
+test("splitByDay leaves a same-day stretch whole", () => {
+  const from = new Date(2026, 8, 20, 10, 0, 0).getTime()
+  deepEqual(M.splitByDay(from, from + 1000), [{ key: "2026-09-20", ms: 1000 }])
+  deepEqual(M.splitByDay(from, from), [])
+  deepEqual(M.splitByDay(from, from - 5), [])
+})
+
+test("splitByDay credits a stretch across midnight to both days", () => {
+  const from = new Date(2026, 8, 20, 23, 59, 59, 400).getTime()
+  const to = new Date(2026, 8, 21, 0, 0, 0, 500).getTime()
+  const parts = M.splitByDay(from, to)
+  deepEqual(parts, [
+    { key: "2026-09-20", ms: 600 },
+    { key: "2026-09-21", ms: 500 }
+  ])
+  assert.equal(parts[0].ms + parts[1].ms, to - from)
+})
+
+test("splitByDay across month and year ends, and a multi-day gap", () => {
+  const dec31 = new Date(2026, 11, 31, 23, 59, 59, 0).getTime()
+  const jan1 = new Date(2027, 0, 1, 0, 0, 1, 0).getTime()
+  deepEqual(M.splitByDay(dec31, jan1).map((p) => p.key), ["2026-12-31", "2027-01-01"])
+  const a = new Date(2026, 8, 20, 12, 0, 0).getTime()
+  const b = new Date(2026, 8, 23, 12, 0, 0).getTime()
+  const days = M.splitByDay(a, b)
+  assert.equal(days.length, 4)
+  assert.equal(days.reduce((n, p) => n + p.ms, 0), b - a)
+})
+
+test("topApps merges rows that share a name and applies custom names", () => {
+  const day = { total: 100, apps: { zen: 40, firefox: 30, nvim: 30 } }
+  const rows = M.topApps(day, 5, { zen: "Browser", firefox: "Browser" })
+  assert.equal(rows.length, 2)
+  assert.equal(rows[0].name, "Browser")
+  assert.equal(rows[0].ms, 70)
+  assert.equal(rows[0].share, 0.7)
+  assert.equal(rows[1].name, "Nvim")
+})
+
+test("recentDays leaves ignored apps out of each day's total", () => {
+  const days = {
+    "2026-09-20": { total: 300, apps: { rofi: 100, nvim: 200 } },
+    "2026-09-19": { total: 100, apps: { rofi: 100 } }
+  }
+  const out = M.recentDays(days, D(2026, 9, 20), 2, ["rofi"], {})
+  assert.equal(out[1].ms, 200)
+  assert.equal(out[0].ms, 0)
+  assert.equal(M.recentDays(days, D(2026, 9, 20), 2)[0].ms, 100)
+})
+
+test("normalizeKeys merges history recorded under older names", () => {
+  const days = {
+    "2026-09-20": { total: 700, apps: { "brave-browser": 300, brave: 200, "chrome-web.whatsapp.com__-Default": 100, nvim: 100 } }
+  }
+  const out = M.normalizeKeys(days)
+  deepEqual(out["2026-09-20"], { total: 700, apps: { brave: 500, "web:web.whatsapp.com": 100, nvim: 100 } })
+  // input untouched
+  assert.equal(days["2026-09-20"].apps["brave-browser"], 300)
+  deepEqual(M.normalizeKeys({}), {})
+  // already-normal history is unchanged
+  deepEqual(M.normalizeKeys(out), out)
+})

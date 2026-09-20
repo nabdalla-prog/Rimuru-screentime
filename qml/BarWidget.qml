@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "../js/Model.js" as Model
 
 // Bar button showing today's total, and the host for the popup panel.
 // Left click opens the panel; right click switches between "icon + time" and
@@ -11,8 +12,19 @@ BarWidget {
     moduleName: "rimuru.screentime"
 
     readonly property var service: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
-    readonly property string label: service ? service.label : ""
+    readonly property string timeLabel: service ? service.label : ""
     readonly property bool hasActivity: service ? service.hasActivity : false
+
+    // Daily goal: a check mark joins the label once today reaches it.
+    readonly property var goal: Model.goalProgress(service ? service.todayTotal : 0, service ? service.dailyGoalHours : 0)
+    readonly property string label: goal.reached ? timeLabel + " ✓" : timeLabel
+    readonly property string goalTooltip: {
+        if (!goal.enabled)
+            return "";
+        if (goal.reached)
+            return " · goal reached (" + Model.fmt(goal.goalMs) + ")";
+        return " · " + Model.fmt(goal.remainingMs) + " left of " + Model.fmt(goal.goalMs);
+    }
 
     // Nerd Font hourglass (U+F051F).
     readonly property string glyph: "󰔟"
@@ -34,20 +46,33 @@ BarWidget {
         return lines;
     }
 
-    function toggleIconOnly() {
+    // Writes one key of this widget's entry in shell.json (which hot-reloads),
+    // keeping every other key the entry already has.
+    function setSetting(key, value) {
         var entry = {
             id: root.moduleName
         };
-        for (var key in root.settings)
-            if (key !== "id")
-                entry[key] = root.settings[key];
-        entry.iconOnly = !root.iconOnly;
-        // Apply locally first so the bar reacts on the click itself; the
-        // shell.json write comes back through the bar as the same value.
+        for (var k in root.settings)
+            if (k !== "id")
+                entry[k] = root.settings[k];
+        entry[key] = value;
+        // Apply locally first so the bar reacts at once; the shell.json write
+        // comes back through the bar as the same value.
         root.settings = entry;
         if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
             root.bar.shell.updateEntryInline(root.moduleName, entry);
     }
+
+    function toggleIconOnly() {
+        root.setSetting("iconOnly", !root.iconOnly);
+    }
+
+    // The service lives apart from the widget, so hand it the settings.
+    function pushSettings() {
+        if (root.service)
+            root.service.applySettings(root.settings);
+    }
+    onServiceChanged: pushSettings()
 
     // ---- Panel contract used by the shell's summon/hide/toggle routing ------
     readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
@@ -92,7 +117,10 @@ BarWidget {
     implicitHeight: button.implicitHeight
 
     onBarChanged: injectPanel()
-    onSettingsChanged: injectPanel()
+    onSettingsChanged: {
+        injectPanel();
+        pushSettings();
+    }
 
     Loader {
         id: panelLoader
@@ -105,7 +133,8 @@ BarWidget {
         }
     }
 
-    // `omarchy-shell rimuru.screentime toggle` etc., handy for keybindings.
+    // `omarchy-shell rimuru.screentime <command>`. Handy for keybindings, and
+    // the way to change settings until the settings menu exists.
     IpcHandler {
         target: "rimuru.screentime"
         function open(): void {
@@ -117,9 +146,42 @@ BarWidget {
         function toggle(): void {
             root.togglePanel();
         }
-        function status(): void {
+        function apps(): string {
+            return root.service ? root.service.summary() : "service unavailable";
+        }
+        function goal(hours: int): void {
+            root.setSetting("dailyGoalHours", Model.parseGoal(hours));
+        }
+        function ignore(app: string): void {
+            var list = Model.parseList(root.setting("ignoredApps", []));
+            var name = app.trim().toLowerCase();
+            if (name !== "" && list.indexOf(name) === -1)
+                root.setSetting("ignoredApps", list.concat([name]));
+        }
+        function unignore(app: string): void {
+            var name = app.trim().toLowerCase();
+            root.setSetting("ignoredApps", Model.parseList(root.setting("ignoredApps", [])).filter(function (a) {
+                return a !== name;
+            }));
+        }
+        function rename(app: string, name: string): void {
+            var names = Model.parseNames(root.setting("appNames", {}));
+            var key = app.trim().toLowerCase();
+            if (key === "")
+                return;
+            if (name.trim() === "")
+                delete names[key];
+            else
+                names[key] = name.trim().slice(0, 40);
+            root.setSetting("appNames", names);
+        }
+        function status(): string {
             var s = root.service;
-            console.log("screentime: opened=" + root.opened + " label=" + root.label + " service=" + (s ? "ok" : "missing") + (s ? " app=" + s.focusedApp + " tracking=" + s.tracking + " locked=" + s.sessionLocked + " lockSource=" + (s.lockService ? "event" : "poll") : ""));
+            var line = "opened=" + root.opened + " label=" + root.label + " service=" + (s ? "ok" : "missing");
+            if (s)
+                line += " raw=" + s.rawApp + " app=" + s.focusedApp + " tracking=" + s.tracking + " locked=" + s.sessionLocked + " lockSource=" + (s.lockService ? "event" : "poll");
+            console.log("screentime: " + line);
+            return line;
         }
     }
 
@@ -132,7 +194,7 @@ BarWidget {
         hasVisualContent: root.vertical ? root.verticalLines.length > 0 : text !== ""
         fixedHeight: root.vertical ? root.verticalLines.length * Style.bar.iconSlot : -1
         horizontalMargin: 8.5
-        tooltipText: root.hasActivity ? "Screen time today · " + root.label : "Screen time · no activity yet"
+        tooltipText: (root.hasActivity ? "Screen time today · " + root.timeLabel : "Screen time · no activity yet") + root.goalTooltip
         onPressed: function (b) {
             if (b === Qt.RightButton)
                 root.toggleIconOnly();

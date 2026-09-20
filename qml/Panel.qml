@@ -24,10 +24,11 @@ Panel {
     readonly property int maxRows: 7
 
     // Only compute while visible: the service updates `days` every second.
-    readonly property var rows: opened && service ? Model.topApps(service.today, maxRows) : []
-    readonly property var week: opened && service ? Model.recentDays(service.days, new Date(), 7) : []
+    readonly property var rows: opened && service ? Model.topApps(service.visibleToday, maxRows, service.appNames) : []
+    readonly property var week: opened && service ? Model.recentDays(service.days, new Date(), 7, service.ignoredApps, service.appNames) : []
     readonly property double total: service ? service.todayTotal : 0
-    readonly property int appCount: service ? Object.keys(service.today.apps).length : 0
+    readonly property int appCount: service ? Object.keys(service.visibleToday.apps).length : 0
+    readonly property var goal: Model.goalProgress(total, service ? service.dailyGoalHours : 0)
 
     readonly property color contentForeground: bar ? bar.foreground : Color.foreground
     readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
@@ -116,6 +117,34 @@ Panel {
                                 font.family: root.contentFontFamily
                                 font.pixelSize: Style.font.body
                             }
+                        }
+                    }
+
+                    // ---- Daily goal (only when one is set) --------------------
+                    Column {
+                        visible: root.goal.enabled
+                        width: content.width
+                        spacing: Style.space(4)
+
+                        Rectangle {
+                            width: parent.width
+                            height: Style.space(6)
+                            radius: height / 2
+                            color: root.track
+
+                            Rectangle {
+                                width: Math.max(parent.height, parent.width * root.goal.ratio)
+                                height: parent.height
+                                radius: height / 2
+                                color: root.contentForeground
+                            }
+                        }
+                        Text {
+                            textFormat: Text.PlainText
+                            text: root.goal.reached ? "Goal reached ✓ · " + Model.fmt(root.goal.goalMs) : Model.fmt(root.goal.remainingMs) + " left of " + Model.fmt(root.goal.goalMs)
+                            color: root.dim
+                            font.family: root.contentFontFamily
+                            font.pixelSize: Style.font.caption
                         }
                     }
 

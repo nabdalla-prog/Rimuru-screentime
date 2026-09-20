@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "rimuru.screentime",
   "name": "Screen Time",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "nabdalla",
-  "description": "Daily screen time per app in your Omarchy bar, with a popup breakdown and a 7-day trend. Fully local: nothing leaves your machine.",
+  "description": "Daily screen time per app in your Omarchy bar: sees what runs inside terminals, names Steam games, folds browsers and web apps, with a popup breakdown, 7-day trend and optional daily goal. Fully local: nothing leaves your machine.",
   "kinds": [
     "service",
     "bar-widget"
@@ -19,7 +19,32 @@
     "description": "Today's screen time per app",
     "category": "Wellbeing",
     "allowMultiple": false,
-    "defaultSection": "right"
+    "defaultSection": "right",
+    "schema": [
+      {
+        "key": "dailyGoalHours",
+        "type": "integer",
+        "label": "Daily goal (hours, 0 = off)",
+        "min": 0,
+        "max": 24,
+        "step": 1,
+        "defaultValue": 0
+      },
+      {
+        "key": "ignoredApps",
+        "type": "string",
+        "label": "Ignored apps",
+        "defaultValue": "",
+        "description": "Comma-separated app names that are never counted."
+      },
+      {
+        "key": "appNames",
+        "type": "string",
+        "label": "Custom app names",
+        "defaultValue": "",
+        "description": "app=Name pairs, comma-separated, e.g. zen=Browser, foot=Terminal."
+      }
+    ]
   },
   "license": "MIT",
   "homepage": "https://github.com/nabdalla-prog/Rimuru-screentime"
