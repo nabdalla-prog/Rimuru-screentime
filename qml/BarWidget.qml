@@ -8,7 +8,7 @@ import qs.Ui
 // "icon only" (remembered in shell.json).
 BarWidget {
     id: root
-    moduleName: "nabdalla.screentime"
+    moduleName: "rimuru.screentime"
 
     readonly property var service: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
     readonly property string label: service ? service.label : ""
@@ -105,9 +105,9 @@ BarWidget {
         }
     }
 
-    // `omarchy-shell nabdalla.screentime toggle` etc., handy for keybindings.
+    // `omarchy-shell rimuru.screentime toggle` etc., handy for keybindings.
     IpcHandler {
-        target: "nabdalla.screentime"
+        target: "rimuru.screentime"
         function open(): void {
             root.open();
         }

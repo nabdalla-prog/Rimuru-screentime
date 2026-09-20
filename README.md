@@ -10,7 +10,7 @@ Fully local: it reads which window is focused, adds up the time, and saves it to
 omarchy plugin add https://github.com/nabdalla-prog/Rimuru-screentime.git --enable
 ```
 
-Update later with `omarchy plugin update`. To remove: `omarchy plugin remove nabdalla.screentime`.
+Update later with `omarchy plugin update`. To remove: `omarchy plugin remove rimuru.screentime`.
 
 ## Use
 
@@ -20,7 +20,7 @@ Update later with `omarchy plugin update`. To remove: `omarchy plugin remove nab
 | Right click | Switch between icon + time and icon only |
 | `Esc` | Close the popup |
 
-Bindable from a keyboard shortcut: `omarchy-shell nabdalla.screentime toggle` (also `open`, `close`, `status`).
+Bindable from a keyboard shortcut: `omarchy-shell rimuru.screentime toggle` (also `open`, `close`, `status`).
 
 ## What is tracked
 
@@ -39,8 +39,8 @@ Omarchy plugins run inside the shell with your user's permissions and are not sa
 ```bash
 node --test tests/          # unit tests for js/Model.js
 omarchy plugin validate .   # check the manifest
-ln -s "$PWD" ~/.config/omarchy/plugins/nabdalla.screentime
-omarchy-shell shell rescanPlugins && omarchy plugin enable nabdalla.screentime
+ln -s "$PWD" ~/.config/omarchy/plugins/rimuru.screentime
+omarchy-shell shell rescanPlugins && omarchy plugin enable rimuru.screentime
 ```
 
 Saved changes to the widget and panel reload automatically. `qml/Service.qml` stays loaded across hot-reloads, so changes to it need `omarchy restart shell`.

@@ -9,8 +9,8 @@ import "../js/Model.js" as Model
 // `anchorItem` and `hostWidget`; data comes from the Service via the widget.
 Panel {
     id: root
-    moduleName: "nabdalla.screentime"
-    ipcTarget: "nabdalla.screentime"
+    moduleName: "rimuru.screentime"
+    ipcTarget: "rimuru.screentime"
     manageIpc: false
 
     property var anchorItem: null
