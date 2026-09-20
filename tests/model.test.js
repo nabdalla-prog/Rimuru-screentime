@@ -151,31 +151,6 @@ test("topApps: bars scale to the largest row even when Other is largest", () => 
   assert.ok(rows.every((r) => r.rel <= 1))
 })
 
-test("recentDays spans n days ending today, oldest first", () => {
-  const days = {
-    "2026-09-20": { total: 4000, apps: { a: 4000 } },
-    "2026-09-18": { total: 2000, apps: { a: 2000 } }
-  }
-  const out = M.recentDays(days, D(2026, 9, 20), 7)
-  assert.equal(out.length, 7)
-  assert.equal(out[0].key, "2026-09-14")
-  assert.equal(out[6].key, "2026-09-20")
-  assert.equal(out[6].today, true)
-  assert.equal(out[6].rel, 1)
-  assert.equal(out[4].ms, 2000)
-  assert.equal(out[4].rel, 0.5)
-  assert.equal(out[5].ms, 0)
-  assert.equal(out.filter((d) => d.today).length, 1)
-  // 2026-09-20 is a Sunday
-  assert.equal(out[6].label, "S")
-})
-
-test("recentDays handles month boundaries", () => {
-  const out = M.recentDays({}, D(2026, 3, 2), 4)
-  deepEqual(out.map((d) => d.key), ["2026-02-27", "2026-02-28", "2026-03-01", "2026-03-02"])
-  assert.ok(out.every((d) => d.rel === 0))
-})
-
 // ---- Phase 1: identity, settings, goal, midnight ------------------------------
 
 test("displayName keeps deliberate names, prettifies plain ids", () => {
@@ -335,17 +310,6 @@ test("topApps merges rows that share a name and applies custom names", () => {
   assert.equal(rows[1].name, "Nvim")
 })
 
-test("recentDays leaves ignored apps out of each day's total", () => {
-  const days = {
-    "2026-09-20": { total: 300, apps: { rofi: 100, nvim: 200 } },
-    "2026-09-19": { total: 100, apps: { rofi: 100 } }
-  }
-  const out = M.recentDays(days, D(2026, 9, 20), 2, ["rofi"], {})
-  assert.equal(out[1].ms, 200)
-  assert.equal(out[0].ms, 0)
-  assert.equal(M.recentDays(days, D(2026, 9, 20), 2)[0].ms, 100)
-})
-
 test("normalizeKeys merges history recorded under older names", () => {
   const days = {
     "2026-09-20": { total: 700, apps: { "brave-browser": 300, brave: 200, "chrome-web.whatsapp.com__-Default": 100, nvim: 100 } }
@@ -357,4 +321,183 @@ test("normalizeKeys merges history recorded under older names", () => {
   deepEqual(M.normalizeKeys({}), {})
   // already-normal history is unchanged
   deepEqual(M.normalizeKeys(out), out)
+})
+
+// ---- Phase 2: weeks, insights, donut --------------------------------------------
+
+test("parseKey round-trips and rejects junk", () => {
+  assert.equal(M.dayKey(M.parseKey("2026-09-20")), "2026-09-20")
+  assert.equal(M.parseKey("2026-9-20"), null)
+  assert.equal(M.parseKey("nope"), null)
+  assert.equal(M.parseKey(null), null)
+})
+
+test("mondayOf treats Monday as the first day", () => {
+  assert.equal(M.dayKey(M.mondayOf(D(2026, 9, 20))), "2026-09-14") // Sunday
+  assert.equal(M.dayKey(M.mondayOf(D(2026, 9, 14))), "2026-09-14") // Monday
+  assert.equal(M.dayKey(M.mondayOf(D(2026, 9, 17))), "2026-09-14")
+  assert.equal(M.dayKey(M.mondayOf(D(2026, 1, 1))), "2025-12-29") // across the year
+})
+
+test("isoWeek matches the ISO 8601 calendar", () => {
+  assert.equal(M.isoWeek(D(2026, 8, 31)), 36)
+  assert.equal(M.isoWeek(D(2026, 9, 6)), 36)
+  assert.equal(M.isoWeek(D(2026, 9, 7)), 37)
+  assert.equal(M.isoWeek(D(2026, 1, 1)), 1)
+  assert.equal(M.isoWeek(D(2026, 12, 31)), 53) // 2026 has 53 weeks
+  assert.equal(M.isoWeek(D(2027, 1, 1)), 53) // still 2026's last week
+  assert.equal(M.isoWeek(D(2027, 1, 4)), 1)
+  assert.equal(M.isoWeek(D(2024, 12, 30)), 1) // belongs to 2025's week 1
+  assert.equal(M.isoWeek(D(2024, 2, 29)), 9) // leap day
+})
+
+test("weekLabel", () => {
+  assert.equal(M.weekLabel(D(2026, 8, 31)), "Aug 31 \u2013 Sep 6, 2026 \u00b7 W36")
+  assert.equal(M.weekLabel(D(2026, 9, 14)), "Sep 14 \u2013 Sep 20, 2026 \u00b7 W38")
+  assert.equal(M.weekLabel(D(2026, 12, 28)), "Dec 28, 2026 \u2013 Jan 3, 2027 \u00b7 W53")
+})
+
+test("weekPage: seven Monday-to-Sunday days with totals and shares", () => {
+  const days = {
+    "2026-09-14": { total: 3600000, apps: { a: 3600000 } },
+    "2026-09-16": { total: 7200000, apps: { a: 7200000 } },
+    "2026-09-20": { total: 1800000, apps: { a: 1800000 } }
+  }
+  const p = M.weekPage(days, D(2026, 9, 20), 0)
+  assert.equal(p.days.length, 7)
+  deepEqual(p.days.map((d) => d.key), ["2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18", "2026-09-19", "2026-09-20"])
+  deepEqual(p.days.map((d) => d.letter), ["M", "T", "W", "T", "F", "S", "S"])
+  assert.equal(p.total, 12600000)
+  assert.equal(p.days[2].rel, 1)
+  assert.equal(p.days[0].rel, 0.5)
+  assert.equal(p.days[6].today, true)
+  assert.equal(p.days.filter((d) => d.today).length, 1)
+  assert.ok(Math.abs(p.share - 12600000 / (168 * 3600000)) < 1e-12)
+  assert.equal(p.label, "Sep 14 \u2013 Sep 20, 2026 \u00b7 W38")
+})
+
+test("weekPage: future days count as zero and are flagged", () => {
+  const days = { "2026-09-18": { total: 500, apps: { a: 500 } }, "2026-09-22": { total: 999, apps: { a: 999 } } }
+  const p = M.weekPage(days, D(2026, 9, 17), 0) // Thursday
+  deepEqual(p.days.map((d) => d.future), [false, false, false, false, true, true, true])
+  assert.equal(p.total, 0)
+})
+
+test("weekPage: paging back and ignoring apps", () => {
+  const days = {
+    "2026-09-08": { total: 300, apps: { rofi: 100, nvim: 200 } }
+  }
+  const p = M.weekPage(days, D(2026, 9, 20), 1, ["rofi"], {})
+  assert.equal(p.label, "Sep 7 \u2013 Sep 13, 2026 \u00b7 W37")
+  assert.equal(p.total, 200)
+  assert.equal(p.days[1].ms, 200)
+  assert.equal(p.days.filter((d) => d.today).length, 0)
+  assert.equal(M.weekPage(days, D(2026, 9, 20), 1).total, 300)
+})
+
+test("weekPage: an empty week is all zeros with no divide-by-zero", () => {
+  const p = M.weekPage({}, D(2026, 9, 20), 3)
+  assert.equal(p.total, 0)
+  assert.ok(p.days.every((d) => d.ms === 0 && d.rel === 0))
+})
+
+test("weeksBack and maxBack", () => {
+  const now = D(2026, 9, 20)
+  assert.equal(M.weeksBack(now, D(2026, 9, 14)), 0)
+  assert.equal(M.weeksBack(now, D(2026, 9, 13)), 1)
+  assert.equal(M.weeksBack(now, D(2025, 9, 21)), 52)
+  assert.equal(M.weeksBack(now, D(2027, 1, 1)), 0) // future clamps to 0
+  assert.equal(M.maxBack({}, now, 52), 0)
+  assert.equal(M.maxBack({ "2026-09-20": {} }, now, 52), 0)
+  assert.equal(M.maxBack({ "2026-08-31": {}, "2026-09-20": {} }, now, 52), 2) // W36 -> W38
+  assert.equal(M.maxBack({ "2024-01-01": {} }, now, 52), 51) // capped at cap - 1
+  assert.equal(M.maxBack({ "bad": {} }, now, 52), 0)
+})
+
+test("shiftDay moves by days, never past today or the oldest day", () => {
+  assert.equal(M.shiftDay("2026-09-19", 1, "2026-09-20", "2025-09-22"), "2026-09-20")
+  assert.equal(M.shiftDay("2026-09-20", 1, "2026-09-20", "2025-09-22"), "2026-09-20")
+  assert.equal(M.shiftDay("2026-09-20", -1, "2026-09-20", "2025-09-22"), "2026-09-19")
+  assert.equal(M.shiftDay("2026-03-01", -1, "2026-09-20", "2025-09-22"), "2026-02-28")
+  assert.equal(M.shiftDay("2025-09-22", -1, "2026-09-20", "2025-09-22"), "2025-09-22")
+  assert.equal(M.shiftDay("garbage", 1, "2026-09-20", ""), "garbage")
+})
+
+test("dayTitle", () => {
+  assert.equal(M.dayTitle("2026-09-20", "2026-09-20"), "Today")
+  assert.equal(M.dayTitle("2026-09-19", "2026-09-20"), "Yesterday")
+  assert.equal(M.dayTitle("2026-09-17", "2026-09-20"), "Thu, Sep 17")
+  assert.equal(M.dayTitle("2026-03-01", "2026-03-02"), "Yesterday")
+})
+
+test("dayInsights: top app, comparison with the day before, busiest day", () => {
+  const days = {
+    "2026-09-19": { total: 3600000, apps: { nvim: 3600000 } },
+    "2026-09-20": { total: 5400000, apps: { nvim: 1800000, brave: 3600000 } }
+  }
+  const now = D(2026, 9, 20)
+  const page = M.weekPage(days, now, 0)
+  const r = M.dayInsights(days, "2026-09-20", "2026-09-20", page, [], {})
+  deepEqual(r.map((x) => x.label), ["Top app", "vs yesterday", "Busiest day"])
+  assert.equal(r[0].value, "Brave \u00b7 1h")
+  assert.equal(r[1].value, "+30m")
+  assert.equal(r[2].value, "Sun \u00b7 1h 30m")
+  // A past day is compared with its own previous day, named by weekday.
+  const past = M.dayInsights(days, "2026-09-19", "2026-09-20", page, [], {})
+  assert.equal(past[1].label, "vs Fri")
+  assert.equal(past[1].value, "\u2014") // no data for the 18th
+  // Less than the day before.
+  const less = { "2026-09-19": { total: 7200000, apps: { a: 7200000 } }, "2026-09-20": { total: 3600000, apps: { a: 3600000 } } }
+  assert.equal(M.dayInsights(less, "2026-09-20", "2026-09-20", M.weekPage(less, now, 0), [], {})[1].value, "\u22121h")
+  const same = { "2026-09-19": { total: 60000, apps: { a: 60000 } }, "2026-09-20": { total: 60000, apps: { a: 60000 } } }
+  assert.equal(M.dayInsights(same, "2026-09-20", "2026-09-20", M.weekPage(same, now, 0), [], {})[1].value, "same")
+})
+
+test("dayInsights: empty data shows dashes, never throws", () => {
+  const page = M.weekPage({}, D(2026, 9, 20), 0)
+  const r = M.dayInsights({}, "2026-09-20", "2026-09-20", page, [], {})
+  deepEqual(r.map((x) => x.value), ["\u2014", "\u2014", "\u2014"])
+})
+
+test("dayInsights respects ignored apps and custom names", () => {
+  const days = { "2026-09-20": { total: 900, apps: { rofi: 800, nvim: 100 } } }
+  const page = M.weekPage(days, D(2026, 9, 20), 0, ["rofi"], {})
+  const r = M.dayInsights(days, "2026-09-20", "2026-09-20", page, ["rofi"], { nvim: "Editor" })
+  assert.equal(r[0].value, "Editor \u00b7 <1m")
+})
+
+test("donutSlices: top apps, small ones folded into Other, angles add to a full turn", () => {
+  const day = { total: 1000, apps: { a: 400, b: 300, c: 200, d: 50, e: 30, f: 15, g: 5 } }
+  const s = M.donutSlices(day, {}, 6, 0.03)
+  deepEqual(s.map((x) => x.name), ["A", "B", "C", "D", "E", "Other"])
+  assert.equal(s[5].other, true)
+  assert.equal(s[5].ms, 20) // f + g are under 3%
+  assert.equal(s[0].startFrac, 0)
+  const last = s[s.length - 1]
+  assert.ok(Math.abs(last.startFrac + last.sweepFrac - 1) < 1e-9)
+  s.forEach((x, i) => assert.equal(x.index, i))
+})
+
+test("donutSlices: never more than maxApps plus Other", () => {
+  const apps = {}
+  for (let i = 0; i < 12; i++) apps["app" + String.fromCharCode(97 + i)] = 100
+  const s = M.donutSlices({ total: 1200, apps }, {}, 6, 0.03)
+  assert.equal(s.length, 7)
+  assert.equal(s[6].other, true)
+  assert.equal(s[6].ms, 600)
+})
+
+test("donutSlices: no Other when everything fits; empty and single-app days", () => {
+  assert.equal(M.donutSlices({ total: 30, apps: { a: 10, b: 20 } }, {}, 6, 0.03).some((x) => x.other), false)
+  assert.equal(M.donutSlices(M.newDay(), {}, 6, 0.03).length, 0)
+  const one = M.donutSlices({ total: 50, apps: { a: 50 } }, {}, 6, 0.03)
+  assert.equal(one.length, 1)
+  assert.equal(one[0].sweepFrac, 1)
+})
+
+test("donutSlices merges apps that share a custom name", () => {
+  const day = { total: 100, apps: { zen: 40, firefox: 40, nvim: 20 } }
+  const s = M.donutSlices(day, { zen: "Browser", firefox: "Browser" }, 6, 0.03)
+  deepEqual(s.map((x) => x.name), ["Browser", "Nvim"])
+  assert.equal(s[0].ms, 80)
 })

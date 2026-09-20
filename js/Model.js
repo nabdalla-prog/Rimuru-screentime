@@ -365,22 +365,178 @@ function topApps(day, limit, names) {
   })
 }
 
-var WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"]
+// ---- Calendar helpers ---------------------------------------------------------
 
-// The last `n` days ending today, oldest first, for the trend strip. Ignored
-// apps are left out of each day's total.
-function recentDays(days, now, n, ignored, names) {
+var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+var WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+// Weeks run Monday to Sunday.
+var WEEK_LETTERS = ["M", "T", "W", "T", "F", "S", "S"]
+var DAY_MS = 86400000
+var WEEK_HOURS_MS = 168 * 3600000
+
+// "YYYY-MM-DD" -> local midnight, or null.
+function parseKey(key) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key))
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null
+}
+
+function startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
+function addDays(d, n) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
+}
+
+function mondayOf(d) {
+  return addDays(d, -((d.getDay() + 6) % 7))
+}
+
+// ISO 8601 week number (the week containing the year's first Thursday is 1).
+function isoWeek(date) {
+  var d = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7))
+  var week1 = new Date(d.getFullYear(), 0, 4)
+  return 1 + Math.round(((d - week1) / DAY_MS - 3 + ((week1.getDay() + 6) % 7)) / 7)
+}
+
+// Whole weeks from the week containing `date` to the current week (>= 0).
+function weeksBack(now, date) {
+  var diff = mondayOf(startOfDay(now)) - mondayOf(startOfDay(date))
+  return Math.max(0, Math.round(diff / (7 * DAY_MS)))
+}
+
+// How many weeks the trend can page back: as far as recorded history goes,
+// at most `cap` weeks in total (so cap - 1 pages back from this week).
+function maxBack(days, now, cap) {
+  var first = null
+  for (var key in days) if (first === null || key < first) first = key
+  var d = first === null ? null : parseKey(first)
+  if (!d) return 0
+  return Math.min(Math.max(0, cap - 1), weeksBack(now, d))
+}
+
+// The day `delta` days from `key`, kept between the oldest day the trend can
+// show and today.
+function shiftDay(key, delta, todayKey, oldestKey) {
+  var d = parseKey(key)
+  var today = parseKey(todayKey)
+  if (!d || !today) return key
+  var next = dayKey(addDays(d, delta))
+  if (next > todayKey) return todayKey
+  if (oldestKey && next < oldestKey) return oldestKey
+  return next
+}
+
+// "Today", "Yesterday" or "Sat, Sep 19".
+function dayTitle(key, todayKey) {
+  if (key === todayKey) return "Today"
+  var d = parseKey(key)
+  var today = parseKey(todayKey)
+  if (!d || !today) return String(key)
+  if (dayKey(addDays(today, -1)) === key) return "Yesterday"
+  return WEEKDAYS[d.getDay()] + ", " + MONTHS[d.getMonth()] + " " + d.getDate()
+}
+
+// "Aug 31 \u2013 Sep 6, 2026 \u00b7 W36". A week that straddles New Year names
+// both years.
+function weekLabel(monday) {
+  var sunday = addDays(monday, 6)
+  var from = MONTHS[monday.getMonth()] + " " + monday.getDate()
+  var to = MONTHS[sunday.getMonth()] + " " + sunday.getDate()
+  var range = monday.getFullYear() === sunday.getFullYear()
+    ? from + " \u2013 " + to + ", " + sunday.getFullYear()
+    : from + ", " + monday.getFullYear() + " \u2013 " + to + ", " + sunday.getFullYear()
+  return range + " \u00b7 W" + isoWeek(monday)
+}
+
+// One Monday-to-Sunday page of the trend, `back` weeks before this one. Days
+// after today are marked `future` and count as zero. Ignored apps are left
+// out. `rel` scales each bar against the busiest day on the page; `share` is
+// the week's total as a fraction of its 168 hours.
+function weekPage(days, now, back, ignored, names) {
+  var today = startOfDay(now)
+  var monday = mondayOf(addDays(today, -7 * back))
   var out = []
+  var total = 0
   var max = 0
-  for (var i = n - 1; i >= 0; i--) {
-    var d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
+  for (var i = 0; i < 7; i++) {
+    var d = addDays(monday, i)
     var key = dayKey(d)
-    var day = days[key] ? visibleDay(days[key], ignored, names) : null
+    var future = d > today
+    var day = !future && days[key] ? visibleDay(days[key], ignored, names) : null
     var ms = day ? day.total : 0
+    total += ms
     max = Math.max(max, ms)
-    out.push({ key: key, ms: ms, label: WEEKDAY_LETTERS[d.getDay()], today: i === 0 })
+    out.push({ key: key, weekday: WEEKDAYS[d.getDay()], letter: WEEK_LETTERS[i], ms: ms, today: d.getTime() === today.getTime(), future: future })
   }
-  return out.map(function (e) {
-    return { key: e.key, ms: e.ms, label: e.label, today: e.today, rel: max > 0 ? e.ms / max : 0 }
+  return {
+    back: back,
+    label: weekLabel(monday),
+    total: total,
+    share: total / WEEK_HOURS_MS,
+    days: out.map(function (e) {
+      return { key: e.key, weekday: e.weekday, letter: e.letter, ms: e.ms, today: e.today, future: e.future, rel: max > 0 ? e.ms / max : 0 }
+    })
+  }
+}
+
+// ---- Insights and chart slices ---------------------------------------------------
+
+var DASH = "\u2014"
+
+// Three rows for the selected day: its top app, how it compares with the day
+// before, and the busiest day of the week on screen. Missing data shows a dash.
+function dayInsights(days, key, todayKey, page, ignored, names) {
+  var day = days[key] ? visibleDay(days[key], ignored, names) : null
+  var rows = day ? topApps(day, 100000, names) : []
+  var top = rows.length > 0 ? rows[0].name + " \u00b7 " + fmt(rows[0].ms) : DASH
+
+  var d = parseKey(key)
+  var prevDate = d ? addDays(d, -1) : null
+  var prev = prevDate && days[dayKey(prevDate)] ? visibleDay(days[dayKey(prevDate)], ignored, names) : null
+  var versus = DASH
+  if (prev) {
+    var diff = (day ? day.total : 0) - prev.total
+    versus = diff === 0 ? "same" : (diff > 0 ? "+" : "\u2212") + fmt(Math.abs(diff))
+  }
+
+  var busiest = DASH
+  var best = null
+  for (var i = 0; i < page.days.length; i++)
+    if (page.days[i].ms > 0 && (best === null || page.days[i].ms > best.ms)) best = page.days[i]
+  if (best) busiest = best.weekday + " \u00b7 " + fmt(best.ms)
+
+  return [
+    { label: "Top app", value: top },
+    { label: key === todayKey || !prevDate ? "vs yesterday" : "vs " + WEEKDAYS[prevDate.getDay()], value: versus },
+    { label: "Busiest day", value: busiest }
+  ]
+}
+
+// Slices for the donut: the biggest `maxApps` apps that hold at least
+// `minShare` of the day, with everything else folded into one "Other". Each
+// slice carries where it starts and how far it sweeps, as fractions of a turn.
+function donutSlices(day, names, maxApps, minShare) {
+  var rows = topApps(day, 100000, names)
+  var head = []
+  var rest = 0
+  var total = 0
+  for (var i = 0; i < rows.length; i++) {
+    total += rows[i].ms
+    if (head.length < maxApps && rows[i].share >= minShare) head.push(rows[i])
+    else rest += rows[i].ms
+  }
+  var slices = head.map(function (r) {
+    return { name: r.name, ms: r.ms, share: r.share, other: false }
   })
+  if (rest > 0) slices.push({ name: "Other", ms: rest, share: total > 0 ? rest / total : 0, other: true })
+  var start = 0
+  for (var j = 0; j < slices.length; j++) {
+    slices[j].index = j
+    slices[j].startFrac = start
+    slices[j].sweepFrac = slices[j].share
+    start += slices[j].share
+  }
+  return slices
 }

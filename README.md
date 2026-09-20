@@ -1,6 +1,6 @@
 # Screen Time for Omarchy
 
-Daily screen time per app, in your Omarchy bar. Click the widget for a popup with today's total, a per-app breakdown and the last seven days.
+Daily screen time per app, in your Omarchy bar. Click the widget for a popup with a donut chart of the day's apps, a week-by-week trend you can page back through, and a few insights.
 
 Fully local: it reads which window is focused, adds up the time, and saves it to a file on your machine. It makes no network requests.
 
@@ -16,11 +16,23 @@ Needs Omarchy with Hyprland, a Nerd Font (for the icon) and `python3` (already o
 
 ## Use
 
-| Action | Result |
+**In the bar:** left click opens the popup, right click switches between icon + time and icon only.
+
+**In the popup:**
+
+- **Donut and list:** the biggest six apps plus "Other" (apps under 3% are folded into it). Hover a slice or a row to spotlight it. *Show more* lists every app that's in "Other".
+- **Week trend:** one Monday-to-Sunday page at a time, with the date range and ISO week number (`Aug 31 – Sep 6, 2026 · W36`). The arrows or the mouse wheel page back through up to 52 weeks, as far as your history goes. Click a day to inspect it (the donut, total and insights follow), then click it again, or *Back to today*, to return. Click the week's total to flip between time and its share of the week's 168 hours.
+- **Insights:** the day's top app, how it compares with the day before, and the busiest day of the week on screen.
+
+| Key | Action |
 |---|---|
-| Left click | Open / close the popup |
-| Right click | Switch between icon + time and icon only |
-| `Esc` | Close the popup |
+| `←` `→` (or `h` `l`) | Previous / next day, following it across weeks |
+| `[` `]` | Older / newer week |
+| `t` | Back to today |
+| `m` | Show more / less apps |
+| `s` | Week total: time / share of the week |
+| `↑` `↓` (or `k` `j`) | Scroll, if the popup is taller than the screen |
+| `Esc` | Close |
 
 ## What is tracked
 
@@ -58,7 +70,7 @@ Other commands: `open`, `close`, `toggle` (bindable to a key) and `status`.
 
 ## Security
 
-Omarchy plugins run inside the shell with your user's permissions and are not sandboxed, so read the code before you install any of them. This one is small: `js/Model.js` (pure logic), `qml/Service.qml` (tracking and saving), `qml/BarWidget.qml` and `qml/Panel.qml` (UI) and `python/resolve_app.py` (looks up the terminal command or Steam title; it only reads `/proc`, `hyprctl activewindow` and Steam's `appmanifest` files, and writes nothing). The other commands it runs are `mkdir -p` and `cp` on its own data folder, and `omarchy-shell lock isLocked` to see whether the screen is locked.
+Omarchy plugins run inside the shell with your user's permissions and are not sandboxed, so read the code before you install any of them. This one is small: `js/Model.js` (pure logic), `qml/Service.qml` (tracking and saving), `qml/BarWidget.qml`, `qml/Panel.qml`, `qml/Dashboard.qml` and `qml/components/` (UI) and `python/resolve_app.py` (looks up the terminal command or Steam title; it only reads `/proc`, `hyprctl activewindow` and Steam's `appmanifest` files, and writes nothing). The other commands it runs are `mkdir -p` and `cp` on its own data folder, and `omarchy-shell lock isLocked` to see whether the screen is locked.
 
 ## Development
 
@@ -70,4 +82,4 @@ ln -s "$PWD" ~/.config/omarchy/plugins/rimuru.screentime
 omarchy-shell shell rescanPlugins && omarchy plugin enable rimuru.screentime
 ```
 
-Saved changes to the widget and panel reload automatically. `qml/Service.qml` stays loaded across hot-reloads, so changes to it need `omarchy restart shell`.
+Omarchy reloads plugin code when files change inside `~/.config/omarchy/plugins/`, but a symlinked checkout isn't watched, and `qml/Service.qml` stays loaded across reloads. So after editing any QML, run `omarchy restart shell` (it briefly blinks the bar).
