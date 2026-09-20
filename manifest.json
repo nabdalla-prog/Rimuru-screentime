@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "nabdalla.screentime",
+  "name": "Screen Time",
+  "version": "0.1.0",
+  "author": "nabdalla",
+  "description": "Daily screen time per app in your Omarchy bar, with a popup breakdown and a 7-day trend. Fully local: nothing leaves your machine.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "qml/Service.qml",
+    "barWidget": "qml/BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Screen Time",
+    "description": "Today's screen time per app",
+    "category": "Wellbeing",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/nabdalla-prog/Rimuru-screentime"
+}

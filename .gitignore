@@ -1,0 +1,3 @@
+.claude/
+*.corrupt-*
+node_modules/
