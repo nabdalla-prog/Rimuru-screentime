@@ -854,3 +854,24 @@ test("isImagePath", () => {
   for (const bad of ["a.txt", "a", "a.png.exe", "", null, "png"])
     assert.equal(M.isImagePath(bad), false, String(bad))
 })
+
+// ---- Update safety: the widget and the service must agree on their contract ----
+
+test("Service.qml and BarWidget.qml declare the same apiLevel", () => {
+  const read = (f) => fs.readFileSync(path.join(__dirname, "..", "qml", f), "utf8")
+  const service = /readonly property int apiLevel:\s*(\d+)/.exec(read("Service.qml"))
+  const widget = /readonly property int requiredApiLevel:\s*(\d+)/.exec(read("BarWidget.qml"))
+  assert.ok(service, "Service.qml declares apiLevel")
+  assert.ok(widget, "BarWidget.qml declares requiredApiLevel")
+  assert.equal(service[1], widget[1])
+})
+
+test("the UI never reads a service property without a fallback", () => {
+  // Every `root.service.<name>` read in Panel.qml's data bindings must be
+  // guarded (`root.service && root.service.<name> ? ... : default`), so an older
+  // service that lacks the property can't push undefined into the popup.
+  const panel = fs.readFileSync(path.join(__dirname, "..", "qml", "Panel.qml"), "utf8")
+  const bindings = panel.split("\n").filter((l) => /^\s+(days|archive|todayKey|ignoredApps|appNames|dailyGoalHours):\s*root\.service/.test(l))
+  assert.equal(bindings.length, 6)
+  for (const line of bindings) assert.match(line, /root\.service && root\.service\.\w+ \?/, line.trim())
+})

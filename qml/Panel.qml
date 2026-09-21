@@ -22,6 +22,8 @@ Panel {
     readonly property var barIdentity: hostWidget || root
 
     readonly property var service: hostWidget ? hostWidget.service : null
+    // The running service is older than these files: ask for a restart.
+    readonly property bool serviceStale: hostWidget ? hostWidget.serviceStale === true : false
 
     readonly property color contentForeground: bar ? bar.foreground : Color.foreground
     readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
@@ -148,12 +150,15 @@ Panel {
                     id: dashboard
                     width: scroll.width
                     active: root.opened
-                    days: root.service ? root.service.days : ({})
-                    archive: root.service ? root.service.archive : ({})
-                    todayKey: root.service ? root.service.todayKey : Model.dayKey(new Date())
-                    ignoredApps: root.service ? root.service.ignoredApps : []
-                    appNames: root.service ? root.service.appNames : ({})
-                    dailyGoalHours: root.service ? root.service.dailyGoalHours : 0
+                    // An older service may lack newer properties, so each falls
+                    // back to a default instead of passing undefined on.
+                    days: root.service && root.service.days ? root.service.days : ({})
+                    archive: root.service && root.service.archive ? root.service.archive : ({})
+                    todayKey: root.service && root.service.todayKey ? root.service.todayKey : Model.dayKey(new Date())
+                    ignoredApps: root.service && root.service.ignoredApps ? root.service.ignoredApps : []
+                    appNames: root.service && root.service.appNames ? root.service.appNames : ({})
+                    dailyGoalHours: root.service && root.service.dailyGoalHours ? root.service.dailyGoalHours : 0
+                    stale: root.serviceStale
                     iconOnly: Model.parseBool(root.setting("iconOnly", false), false)
                     showInsights: Model.parseBool(root.setting("showInsights", true), true)
                     showYearLink: Model.parseBool(root.setting("showYearLink", true), true)
@@ -174,11 +179,11 @@ Panel {
                             root.hostWidget.setSetting(key, value);
                     }
                     onResetTodayRequested: {
-                        if (root.service)
+                        if (root.service && typeof root.service.resetToday === "function")
                             root.service.resetToday();
                     }
                     onWipeAllRequested: {
-                        if (root.service)
+                        if (root.service && typeof root.service.resetAll === "function")
                             root.service.resetAll();
                     }
                     // Typing ended: give the keys back to the popup.

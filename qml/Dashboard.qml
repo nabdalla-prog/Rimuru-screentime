@@ -38,6 +38,8 @@ Item {
     property string backgroundStatus: "ok"
     property int weekCap: 52
     property color danger: Color.urgent
+    // The shell is still running an older service than these files.
+    property bool stale: false
 
     // A preference was changed in the settings menu.
     signal settingChanged(string key, var value)
@@ -102,7 +104,7 @@ Item {
         return r ? r.key : "";
     }
     // Nothing has ever been recorded: show a short hint instead of a blank day.
-    readonly property bool fresh: Object.keys(days).length === 0 && Object.keys(archive).length === 0
+    readonly property bool fresh: Object.keys(days || {}).length === 0 && Object.keys(archive || {}).length === 0
     // Today's apps (minus ignored ones), offered as tap-to-ignore suggestions.
     readonly property var todayApps: view === "settings" ? Model.topApps(Model.visibleDay(days[todayKey] || Model.newDay(), ignoredApps, appNames), 12, appNames).filter(function (r) {
         return !r.other;
@@ -253,6 +255,30 @@ Item {
         visible: root.view === "day"
         width: parent.width
         spacing: Style.space(10)
+
+        // ---- Update notice: the running service is older than these files --------
+        Rectangle {
+            visible: root.stale
+            width: parent.width
+            height: staleText.implicitHeight + Style.space(16)
+            radius: Style.space(8)
+            color: Qt.rgba(root.danger.r, root.danger.g, root.danger.b, 0.16)
+            border.width: 1
+            border.color: Qt.rgba(root.danger.r, root.danger.g, root.danger.b, 0.55)
+
+            Text {
+                id: staleText
+                anchors.fill: parent
+                anchors.margins: Style.space(8)
+                verticalAlignment: Text.AlignVCenter
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+                text: "Screen Time was updated. To finish, restart the shell: omarchy restart shell"
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+            }
+        }
 
         // ---- Header: the day's total -----------------------------------------
         Item {

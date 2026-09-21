@@ -23,6 +23,13 @@ Item {
     // Injected by omarchy-shell.
     property var shell: null
 
+    // What this service offers the widget and popup. BarWidget.qml holds the
+    // level it expects; when they differ (an update replaced the widget but the
+    // running service, which the shell keeps loaded, is still the old one) the
+    // UI tells the user to restart the shell. Bump it in both files whenever
+    // what the UI reads from or calls on the service changes.
+    readonly property int apiLevel: 4
+
     readonly property string dataDir: Quickshell.env("HOME") + "/.local/share/omarchy-screentime"
     readonly property string historyPath: dataDir + "/history.json"
     readonly property string resolverPath: {

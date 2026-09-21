@@ -12,11 +12,17 @@ BarWidget {
     moduleName: "rimuru.screentime"
 
     readonly property var service: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
-    readonly property string timeLabel: service ? service.label : ""
-    readonly property bool hasActivity: service ? service.hasActivity : false
+    // Must match Service.qml's apiLevel. If it doesn't, the shell is still
+    // running an older service than these files (see Service.qml).
+    readonly property int requiredApiLevel: 4
+    readonly property bool serviceStale: service !== null && service.apiLevel !== requiredApiLevel
+
+    // Every read tolerates a service that predates the property.
+    readonly property string timeLabel: service && service.label !== undefined ? service.label : ""
+    readonly property bool hasActivity: service && service.hasActivity === true
 
     // Daily goal: a check mark joins the label once today reaches it.
-    readonly property var goal: Model.goalProgress(service ? service.todayTotal : 0, service ? service.dailyGoalHours : 0)
+    readonly property var goal: Model.goalProgress(service && service.todayTotal ? service.todayTotal : 0, service ? service.dailyGoalHours : 0)
     readonly property string label: goal.reached ? timeLabel + " ✓" : timeLabel
     readonly property string goalTooltip: {
         if (!goal.enabled)
@@ -69,7 +75,7 @@ BarWidget {
 
     // The service lives apart from the widget, so hand it the settings.
     function pushSettings() {
-        if (root.service)
+        if (root.service && typeof root.service.applySettings === "function")
             root.service.applySettings(root.settings);
     }
     onServiceChanged: pushSettings()
@@ -166,7 +172,9 @@ BarWidget {
                 panelLoader.item.showYear();
         }
         function apps(): string {
-            return root.service ? root.service.summary() : "service unavailable";
+            if (!root.service || typeof root.service.summary !== "function")
+                return "service unavailable";
+            return root.service.summary();
         }
         function goal(hours: int): void {
             root.setSetting("dailyGoalHours", Model.parseGoal(hours));
@@ -198,7 +206,7 @@ BarWidget {
             var s = root.service;
             var line = "opened=" + root.opened + " label=" + root.label + " service=" + (s ? "ok" : "missing");
             if (s)
-                line += " raw=" + s.rawApp + " app=" + s.focusedApp + " tracking=" + s.tracking + " locked=" + s.sessionLocked + " lockSource=" + (s.lockService ? "event" : "poll");
+                line += " api=" + s.apiLevel + "/" + root.requiredApiLevel + (root.serviceStale ? " STALE" : "") + " raw=" + s.rawApp + " app=" + s.focusedApp + " tracking=" + s.tracking + " locked=" + s.sessionLocked + " lockSource=" + (s.lockService ? "event" : "poll");
             console.log("screentime: " + line);
             return line;
         }
@@ -213,7 +221,7 @@ BarWidget {
         hasVisualContent: root.vertical ? root.verticalLines.length > 0 : text !== ""
         fixedHeight: root.vertical ? root.verticalLines.length * Style.bar.iconSlot : -1
         horizontalMargin: 8.5
-        tooltipText: (root.hasActivity ? "Screen time today · " + root.timeLabel : "Screen time · no activity yet") + root.goalTooltip
+        tooltipText: (root.hasActivity ? "Screen time today · " + root.timeLabel : "Screen time · no activity yet") + root.goalTooltip + (root.serviceStale ? " · updated: restart the shell to finish" : "")
         onPressed: function (b) {
             if (b === Qt.RightButton)
                 root.toggleIconOnly();
