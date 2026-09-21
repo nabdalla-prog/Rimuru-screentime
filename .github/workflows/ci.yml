@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: 22
       - name: Logic, version and changelog tests
-        run: node --test tests/
+        run: node --test tests/*.test.js
       - name: Terminal resolver tests
         run: python3 -m unittest discover -s tests
       - name: Manifest has what a listing needs

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "rimuru.screentime",
   "name": "Screen Time",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "author": "nabdalla",
   "description": "Daily screen time per app in your Omarchy bar: sees what runs inside terminals, names Steam games, folds browsers and web apps. The popup has a donut chart, a 52-week trend, insights, a yearly overview that reaches back to your first day, a daily goal, a settings menu and an optional faint background picture. Fully local: nothing leaves your machine.",
   "kinds": [

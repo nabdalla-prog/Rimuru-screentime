@@ -171,7 +171,7 @@ Start with `omarchy-shell rimuru.screentime status`. It prints one line: whether
 ## Development
 
 ```bash
-node --test tests/                    # logic, versions and changelog checks
+node --test tests/*.test.js           # logic, versions and changelog checks
 python3 -m unittest discover -s tests # the terminal resolver
 omarchy plugin validate .             # check the manifest
 ln -s "$PWD" ~/.config/omarchy/plugins/rimuru.screentime

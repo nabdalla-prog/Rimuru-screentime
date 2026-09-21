@@ -38,7 +38,7 @@ The shell keeps a plugin's code running until it restarts, so after editing any 
 ## Testing
 
 ```bash
-node --test tests/                     # logic, versions, changelog
+node --test tests/*.test.js            # logic, versions, changelog
 python3 -m unittest discover -s tests  # the terminal resolver
 omarchy plugin validate .              # the manifest
 tools/preview.sh today out.png         # see the popup with made-up data

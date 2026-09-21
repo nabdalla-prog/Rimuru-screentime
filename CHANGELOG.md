@@ -2,6 +2,11 @@
 
 All notable changes to this plugin. Versions follow `manifest.json`; each is a tagged release on GitHub.
 
+## [0.6.2] - 2026-09-20
+
+### Fixed
+- The documented and CI test command `node --test tests/` fails on Node 22 to 24, where a directory is treated as a module. It is now `node --test tests/*.test.js`.
+
 ## [0.6.1] - 2026-09-20
 
 ### Added
