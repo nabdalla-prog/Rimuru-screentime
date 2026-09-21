@@ -1,0 +1,36 @@
+name: Bug report
+description: Something doesn't work or looks wrong
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead? A screenshot helps, but check it doesn't show anything private.
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of `omarchy-shell rimuru.screentime status`
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: omarchy
+    attributes:
+      label: Omarchy version
+      description: Output of `cat /usr/share/omarchy/version`
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Your setup
+      description: Terminal(s), number of monitors, bar position, and anything else unusual.
+  - type: textarea
+    id: log
+    attributes:
+      label: Log lines
+      description: "Output of `journalctl --user --since '-10min' | grep -i screentime`, if any."
+      render: text

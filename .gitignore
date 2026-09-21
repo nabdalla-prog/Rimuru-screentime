@@ -8,4 +8,6 @@ __pycache__/
 /*.jpeg
 /*.webp
 /*.gif
+# The one root image that belongs here: the marketplace/README preview (made-up data).
+!/preview.png
 *.pyc

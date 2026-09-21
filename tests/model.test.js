@@ -875,3 +875,11 @@ test("the UI never reads a service property without a fallback", () => {
   assert.equal(bindings.length, 6)
   for (const line of bindings) assert.match(line, /root\.service && root\.service\.\w+ \?/, line.trim())
 })
+
+// ---- Release hygiene ----------------------------------------------------------
+
+test("CHANGELOG.md has an entry for the current version", () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "manifest.json"), "utf8"))
+  const changelog = fs.readFileSync(path.join(__dirname, "..", "CHANGELOG.md"), "utf8")
+  assert.match(changelog, new RegExp("^## \\[" + manifest.version.replace(/\./g, "\\.") + "\\] - \\d{4}-\\d{2}-\\d{2}$", "m"))
+})

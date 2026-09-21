@@ -1,18 +1,49 @@
 # Screen Time for Omarchy
 
-Daily screen time per app, in your Omarchy bar. Click the widget for a popup with a donut chart of the day's apps, a week-by-week trend you can page back through, a few insights, a yearly overview with month-by-month bars and highlights, and a settings menu, and an optional faint background picture.
+Daily screen time per app, in your Omarchy bar. Click the widget for a popup with a donut chart of the day's apps, a week-by-week trend you can page back through, a few insights, a yearly overview with month-by-month bars and highlights, a settings menu, and an optional faint background picture.
 
 Fully local: it reads which window is focused, adds up the time, and saves it to a file on your machine. It makes no network requests.
 
-## Install
+<p align="center">
+  <img src="preview.png" alt="The Screen Time popup: today's total, a donut chart of apps, a weekly trend and insights" width="420">
+</p>
+
+<p align="center">
+  <img src="docs/year.png" alt="The yearly overview" width="300">
+  &nbsp;
+  <img src="docs/settings.png" alt="The settings menu" width="300">
+</p>
+
+*Screenshots use made-up data.*
+
+## Requirements
+
+- **Omarchy 4** with **Hyprland**. Built and tested on Omarchy 4.0.0.alpha with Quickshell 0.3.1 and Qt 6.11. It needs Qt 6.6 or newer (the donut chart uses Qt's curve renderer), which current Omarchy provides.
+- A **Nerd Font** for the icon (Omarchy's default font has it).
+- **`python3`** (already on Omarchy). Without it the plugin still tracks, but terminals show under the terminal's own name instead of the command running in them.
+
+## Install, update, remove
 
 ```bash
 omarchy plugin add https://github.com/nabdalla-prog/Rimuru-screentime.git --enable
 ```
 
-Update later with `omarchy plugin update`. To remove: `omarchy plugin remove rimuru.screentime`.
+**Update:**
 
-Needs Omarchy with Hyprland, a Nerd Font (for the icon) and `python3` (already on Omarchy). Without `python3` it still tracks, but terminals show under the terminal's own name instead of the command running in it.
+```bash
+omarchy plugin update
+omarchy restart shell
+```
+
+Omarchy keeps a plugin's code running until the shell restarts, so an update only takes effect after `omarchy restart shell` (the bar blinks for a moment). From version 0.6.1 on, the plugin notices when newer files are installed and shows a notice in the bar tooltip and at the top of the popup until you restart.
+
+**Remove:**
+
+```bash
+omarchy plugin remove rimuru.screentime
+```
+
+That removes the plugin and its bar entry. Your history stays in `~/.local/share/omarchy-screentime/`; delete that folder too if you want it gone.
 
 ## Use
 
@@ -92,7 +123,7 @@ Other commands: `open`, `close`, `toggle`, `year` and `settings`, all bindable t
 
 ## Background picture
 
-By default a small blue slime sits very faintly in the lower-right corner of the popup. It is an original drawing made for this plugin; the plugin does not include artwork from any anime, game or other property.
+By default a small blue slime sits very faintly in the lower-right corner of the popup. It is an original drawing made for this plugin; the plugin does not include artwork from any anime, game or other property. The plugin's name refers to Rimuru Tempest from *That Time I Got Reincarnated as a Slime*; this is an unofficial fan project and is not affiliated with or endorsed by the creators or publishers of the series.
 
 To use a picture of your own, such as a wallpaper of a character you like, choose *My picture* in the settings and type its path, or run:
 
@@ -109,18 +140,48 @@ omarchy-shell rimuru.screentime background ~/Pictures/rimuru.png
 
 The plugin follows your Omarchy theme: colours, fonts and the danger colour come from the shell, so switching themes (`omarchy theme set …`) changes the bar widget and popup straight away, light or dark, with no restart.
 
-## Security
+## Privacy and security
 
-Omarchy plugins run inside the shell with your user's permissions and are not sandboxed, so read the code before you install any of them. This one is small: `js/Model.js` (pure logic), `qml/Service.qml` (tracking and saving), `qml/BarWidget.qml`, `qml/Panel.qml`, `qml/Dashboard.qml`, `qml/YearView.qml`, `qml/SettingsView.qml` and `qml/components/` (UI) and `python/resolve_app.py` (looks up the terminal command or Steam title; it only reads `/proc`, `hyprctl activewindow` and Steam's `appmanifest` files, and writes nothing). The other commands it runs are `mkdir -p` and `cp` on its own data folder, and `omarchy-shell lock isLocked` to see whether the screen is locked.
+Nothing leaves your computer: there is no network code, no account and no telemetry. History and settings are plain files you can read and delete.
+
+Omarchy plugins run inside the shell with your user's permissions and are not sandboxed, so read the code before you install any of them. This one is small: `js/Model.js` (pure logic), `qml/Service.qml` (tracking and saving), `qml/BarWidget.qml`, `qml/Panel.qml`, `qml/Dashboard.qml`, `qml/YearView.qml`, `qml/SettingsView.qml` and `qml/components/` (UI) and `python/resolve_app.py` (looks up the terminal command or Steam title; it only reads `/proc`, `hyprctl activewindow` and Steam's `appmanifest` files, and writes nothing). The other commands it runs are `mkdir -p` and `cp` on its own data folder, and `omarchy-shell lock isLocked` to see whether the screen is locked. It only ever writes to its own data folder and to its own entry in `~/.config/omarchy/shell.json`, and only when you change a setting. To report a security problem see [SECURITY.md](SECURITY.md).
+
+## Troubleshooting
+
+Start with `omarchy-shell rimuru.screentime status`. It prints one line: whether the service is running, which window it sees, and the plugin version. Attach it to any bug report.
+
+| Problem | What to check |
+|---|---|
+| Nothing appears in the bar | `omarchy plugin list` should show `rimuru.screentime` as `enabled`. If not: `omarchy plugin enable rimuru.screentime`. |
+| The widget shows `status` with `service=missing` | Restart the shell: `omarchy restart shell`. |
+| The popup looks old after an update, or shows an update notice | Run `omarchy restart shell`. |
+| Terminals show as `Ghostty` / `foot` instead of `nvim` | `python3 --version` must work, and `hyprctl activewindow -j` must print JSON. |
+| The icon shows as an empty box | Install a Nerd Font (Omarchy's default already includes it). |
+| A Steam game shows as `steam_app_730` | Steam's `appmanifest_*.acf` file for it wasn't found in the usual library folders. |
+| Time isn't counted while I'm away | That is intended: the timer pauses while the session is locked or the screensaver is on. |
+| Something else | Look for lines from the plugin: `journalctl --user --since '-10min' \| grep -i screentime`, then [open an issue](https://github.com/nabdalla-prog/Rimuru-screentime/issues/new/choose). |
+
+## Known limitations
+
+- **Tested on one machine** (Omarchy 4.0.0.alpha, Hyprland, one monitor, Ghostty and `foot` terminals, Brave). Bars at the top, bottom, left and right were checked, and the widget stacks its icon and time on vertical bars. **Not tested:** several monitors, other terminals such as kitty, alacritty or wezterm, Steam games, Chromium web apps in real use, and the pause while locked. Reports from other setups are very welcome.
+- **Ghostty and other single-process terminals** run every window in one process. Windows are matched to their shell in creation order, which is right for separate windows but can guess wrong for tabs or splits.
+- **Ignoring an app** hides its time on the last 365 days; older days are stored as totals only and can't be filtered.
+- It depends on internals of the Omarchy shell (its service registry and widget settings), so a future Omarchy release could need a matching update.
 
 ## Development
 
 ```bash
-node --test tests/                    # unit tests for js/Model.js
-python3 -m unittest discover -s tests # unit tests for python/resolve_app.py
+node --test tests/                    # logic, versions and changelog checks
+python3 -m unittest discover -s tests # the terminal resolver
 omarchy plugin validate .             # check the manifest
 ln -s "$PWD" ~/.config/omarchy/plugins/rimuru.screentime
 omarchy-shell shell rescanPlugins && omarchy plugin enable rimuru.screentime
 ```
 
-Omarchy reloads plugin code when files change inside `~/.config/omarchy/plugins/`, but a symlinked checkout isn't watched, and `qml/Service.qml` stays loaded across reloads. So after editing any QML, run `omarchy restart shell` (it briefly blinks the bar).
+The shell keeps running a plugin's code until it restarts, so after editing any file run `omarchy restart shell` (it briefly blinks the bar). `tools/preview.sh` renders the popup on its own with made-up data, which is handy for working on the look without touching your real history (see [CONTRIBUTING.md](CONTRIBUTING.md)).
+
+## Contributing, support and license
+
+Bug reports, ideas and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md). Everyone taking part is asked to follow the [code of conduct](CODE_OF_CONDUCT.md).
+
+[MIT](LICENSE)

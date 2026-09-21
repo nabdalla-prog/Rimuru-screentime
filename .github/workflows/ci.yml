@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Logic, version and changelog tests
+        run: node --test tests/
+      - name: Terminal resolver tests
+        run: python3 -m unittest discover -s tests
+      - name: Manifest has what a listing needs
+        run: jq -e '.id and .name and .version and .license and .homepage and .kinds and .entryPoints' manifest.json

@@ -1,0 +1,11 @@
+name: Idea or feature request
+description: Suggest something new
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: What problem would it solve? Remember the plugin stays local-only.
+    validations:
+      required: true
