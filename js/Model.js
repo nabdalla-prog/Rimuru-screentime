@@ -10,6 +10,8 @@
 // All durations are integer milliseconds. Day keys use the local timezone.
 
 var KEEP_DAYS = 365
+// Shown in the settings menu. A test keeps it equal to manifest.json's version.
+var VERSION = "0.5.0"
 
 function pad(n) {
   return n < 10 ? "0" + n : "" + n
@@ -281,6 +283,20 @@ function parseGoal(v) {
   return Math.min(n, 24)
 }
 
+// How many weeks the trend pages back: one of the offered lengths.
+var WEEK_CHOICES = [12, 24, 36, 52]
+function parseWeeks(v) {
+  var n = Math.floor(Number(v))
+  return WEEK_CHOICES.indexOf(n) !== -1 ? n : 52
+}
+
+// A yes/no setting that may have been written by hand as true, "true", 1...
+function parseBool(v, fallback) {
+  if (v === true || v === "true" || v === 1 || v === "1") return true
+  if (v === false || v === "false" || v === 0 || v === "0") return false
+  return fallback
+}
+
 // What the user sees for a key: their custom name, else a readable default.
 function displayLabel(key, names) {
   var fallback = displayName(key)
@@ -502,6 +518,7 @@ function weekPage(days, now, back, ignored, names) {
   }
   return {
     back: back,
+    key: dayKey(monday),
     label: weekLabel(monday),
     total: total,
     share: total / WEEK_HOURS_MS,
@@ -646,7 +663,7 @@ function yearSummary(totals, year, todayKey) {
   if (end < start) return null
 
   var months = []
-  for (var m = 0; m < 12; m++) months.push({ month: m, label: MONTHS[m], ms: 0, days: 0, outside: new Date(year, m + 1, 0) < start || new Date(year, m, 1) > end })
+  for (var m = 0; m < 12; m++) months.push({ month: m, label: MONTHS[m], ms: 0, days: 0, covered: 0, outside: new Date(year, m + 1, 0) < start || new Date(year, m, 1) > end })
   var wdSum = [0, 0, 0, 0, 0, 0, 0]
   var wdCount = [0, 0, 0, 0, 0, 0, 0]
   var weekSums = {}
@@ -667,6 +684,7 @@ function yearSummary(totals, year, todayKey) {
     var wd = (d.getDay() + 6) % 7
     spanDays++
     total += ms
+    months[d.getMonth()].covered++
     months[d.getMonth()].ms += ms
     wdSum[wd] += ms
     wdCount[wd]++
@@ -697,6 +715,13 @@ function yearSummary(totals, year, todayKey) {
     .sort(function (a, b) { return b.ms - a.ms || a.month - b.month })
     .slice(0, 3)
 
+  // The lightest month, leaving out months measured for under two weeks (a
+  // month just begun, or the one tracking started in) and needing two to compare.
+  var measured = months.filter(function (x) { return x.covered >= 14 })
+  var recharge = measured.length >= 2
+    ? measured.slice().sort(function (a, b) { return a.ms - b.ms || a.month - b.month })[0]
+    : null
+
   var busiestWeek = null
   if (spanDays >= 14)
     Object.keys(weekSums).sort().forEach(function (mk) {
@@ -723,7 +748,47 @@ function yearSummary(totals, year, todayKey) {
     longestStreak: streak,
     longestBreak: gap.days > 0 ? gap : null,
     busiestWeek: busiestWeek,
+    rechargeMonth: recharge ? { month: recharge.month, label: recharge.label, ms: recharge.ms } : null,
     weekdays: weekdays,
     peakDay: peak
   }
+}
+
+// The busiest Monday-to-Sunday week across all recorded history, or null until
+// there are two weeks of it. Returns { key: "<monday>", ms }.
+function recordWeek(totals, todayKey) {
+  var sums = {}
+  var first = null
+  for (var key in totals) {
+    if (key > todayKey) continue
+    if (first === null || key < first) first = key
+    var d = parseKey(key)
+    if (!d) continue
+    var mk = dayKey(mondayOf(d))
+    sums[mk] = (sums[mk] || 0) + totals[key]
+  }
+  var start = first === null ? null : parseKey(first)
+  var today = parseKey(todayKey)
+  if (!start || !today || Math.round((today - start) / DAY_MS) < 13) return null
+  var best = null
+  Object.keys(sums).sort().forEach(function (mk) {
+    if (best === null || sums[mk] > best.ms) best = { key: mk, ms: sums[mk] }
+  })
+  return best
+}
+
+// "48 KB", "1.2 MB".
+function fmtBytes(n) {
+  if (!validMs(n)) return "0 B"
+  if (n < 1024) return Math.round(n) + " B"
+  if (n < 1024 * 1024) return Math.round(n / 1024) + " KB"
+  return (n / (1024 * 1024)).toFixed(1) + " MB"
+}
+
+// One line for the settings menu: how big the history is and what it holds.
+function storageSummary(days, archive) {
+  var detailed = Object.keys(days || {}).length
+  var archived = Object.keys(archive || {}).length
+  return fmtBytes(serialize(days || {}, archive || {}).length) + " \u00b7 " + detailed + (detailed === 1 ? " day" : " days")
+    + " in detail \u00b7 " + archived + " archived (totals kept forever)"
 }

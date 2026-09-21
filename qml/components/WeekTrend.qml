@@ -12,6 +12,9 @@ Item {
     property var page: ({ label: "", total: 0, share: 0, days: [] })
     property string selectedKey: ""
     property bool showShare: false
+    property bool hints: false
+    // This week is the busiest ever recorded.
+    property bool record: false
     property bool canOlder: false
     property bool canNewer: false
     property color foreground: Color.foreground
@@ -24,7 +27,7 @@ Item {
 
     readonly property color dim: Qt.darker(foreground, 1.5)
     readonly property real barAreaHeight: Style.space(60)
-    readonly property string totalText: showShare ? Math.round((page.share || 0) * 100) + "% of week" : Model.fmt(page.total || 0)
+    readonly property string totalText: (record ? "\u2605 " : "") + (showShare ? Math.round((page.share || 0) * 100) + "% of week" : Model.fmt(page.total || 0))
 
     width: parent ? parent.width : implicitWidth
     implicitHeight: header.height + Style.space(8) + bars.height
@@ -39,6 +42,8 @@ Item {
             anchors.left: parent.left
             glyph: "‹"
             active: root.canOlder
+            hintKey: "["
+            hints: root.hints
             foreground: root.foreground
             fontFamily: root.fontFamily
             onClicked: root.olderRequested()
@@ -65,6 +70,15 @@ Item {
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
             font.bold: true
+            KeyBadge {
+                anchors.right: parent.left
+                anchors.rightMargin: Style.space(4)
+                anchors.verticalCenter: parent.verticalCenter
+                key: "s"
+                show: root.hints
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+            }
             MouseArea {
                 id: totalMouse
                 anchors.fill: parent
@@ -79,6 +93,8 @@ Item {
             anchors.right: parent.right
             glyph: "›"
             active: root.canNewer
+            hintKey: "]"
+            hints: root.hints
             foreground: root.foreground
             fontFamily: root.fontFamily
             onClicked: root.newerRequested()
@@ -97,6 +113,7 @@ Item {
             Item {
                 id: dayCol
                 required property var modelData
+                required property int index
                 readonly property bool selected: modelData.key === root.selectedKey
                 width: bars.width / 7
                 height: root.barAreaHeight + Style.space(38)
@@ -151,6 +168,14 @@ Item {
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                     font.bold: dayCol.selected || dayCol.modelData.today
+                }
+                KeyBadge {
+                    anchors.top: parent.top
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    key: String(index + 1)
+                    show: root.hints && !dayCol.modelData.future
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
                 }
                 MouseArea {
                     id: dayMouse

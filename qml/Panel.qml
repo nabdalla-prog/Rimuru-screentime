@@ -31,6 +31,11 @@ Panel {
     function close() {
         root.controller.hide();
     }
+    // Open the popup straight on the settings menu.
+    function showSettings() {
+        dashboard.openSettings();
+        root.open();
+    }
     // Open the popup straight on the yearly overview.
     function showYear() {
         dashboard.openYear();
@@ -74,18 +79,20 @@ Panel {
         // Left/Right move the selected day, Up/Down scroll, [ and ] page
         // through weeks, T returns to today, M shows every app, S flips the
         // week total between time and share of the week, Y opens the yearly
-        // view (where Left/Right and [ ] change the year).
+        // view (where Left/Right and [ ] change the year), C opens settings,
+        // 1-7 inspect a day of the week, F shows the keys as small caps.
         PanelKeyCatcher {
             id: keyCatcher
             anchors.fill: parent
-            // Esc leaves the yearly view first, then closes the popup.
+            // While a settings field is being typed in, keys belong to it.
+            blocked: dashboard.editing
+            // Esc backs out of the yearly view or settings first, then closes.
             onCloseRequested: {
-                if (dashboard.view === "year")
-                    dashboard.closeYear();
-                else
+                if (!dashboard.leaveView())
                     root.close();
             }
             onMoveRequested: function (dx, dy) {
+                dashboard.hints = false;
                 if (dx !== 0 && dashboard.view === "year")
                     dashboard.stepYear(dx);
                 else if (dx !== 0)
@@ -97,7 +104,13 @@ Panel {
                 root.switchPanel(direction);
             }
             onTextKey: function (t) {
-                if (t === "y" || t === "Y")
+                // "f" shows the key caps; any other key hides them again.
+                dashboard.hints = (t === "f" || t === "F") ? !dashboard.hints : false;
+                if (t >= "1" && t <= "7")
+                    dashboard.selectDayNumber(Number(t));
+                else if (t === "c" || t === "C")
+                    dashboard.openSettings();
+                else if (t === "y" || t === "Y")
                     dashboard.view === "year" ? dashboard.closeYear() : dashboard.openYear();
                 else if (t === "[")
                     dashboard.view === "year" ? dashboard.stepYear(-1) : dashboard.pageBy(1);
@@ -130,8 +143,33 @@ Panel {
                     ignoredApps: root.service ? root.service.ignoredApps : []
                     appNames: root.service ? root.service.appNames : ({})
                     dailyGoalHours: root.service ? root.service.dailyGoalHours : 0
+                    iconOnly: Model.parseBool(root.setting("iconOnly", false), false)
+                    showInsights: Model.parseBool(root.setting("showInsights", true), true)
+                    showYearLink: Model.parseBool(root.setting("showYearLink", true), true)
+                    playful: Model.parseBool(root.setting("playful", true), true)
+                    weekCap: Model.parseWeeks(root.setting("weeks", 52))
+                    danger: root.bar ? root.bar.urgent : Color.urgent
                     foreground: root.contentForeground
                     fontFamily: root.contentFontFamily
+
+                    // Preferences live in this widget's entry in shell.json.
+                    onSettingChanged: function (key, value) {
+                        if (root.hostWidget)
+                            root.hostWidget.setSetting(key, value);
+                    }
+                    onResetTodayRequested: {
+                        if (root.service)
+                            root.service.resetToday();
+                    }
+                    onWipeAllRequested: {
+                        if (root.service)
+                            root.service.resetAll();
+                    }
+                    // Typing ended: give the keys back to the popup.
+                    onEditingChanged: {
+                        if (!editing)
+                            keyCatcher.forceActiveFocus();
+                    }
                 }
             }
         }

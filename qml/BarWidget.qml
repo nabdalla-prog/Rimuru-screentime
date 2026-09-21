@@ -146,6 +146,10 @@ BarWidget {
         function toggle(): void {
             root.togglePanel();
         }
+        function settings(): void {
+            if (panelLoader.item)
+                panelLoader.item.showSettings();
+        }
         function year(): void {
             if (panelLoader.item)
                 panelLoader.item.showYear();

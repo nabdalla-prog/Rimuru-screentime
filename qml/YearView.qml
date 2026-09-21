@@ -15,6 +15,7 @@ Item {
     property int currentMonth: -1
     property bool canOlder: false
     property bool canNewer: false
+    property bool hints: false
     property color foreground: Color.foreground
     property string fontFamily: Style.font.family
 
@@ -67,6 +68,8 @@ Item {
                 PagerArrow {
                     glyph: "‹"
                     active: root.canOlder
+                    hintKey: "["
+                    hints: root.hints
                     foreground: root.foreground
                     fontFamily: root.fontFamily
                     onClicked: root.olderRequested()
@@ -85,6 +88,8 @@ Item {
                 PagerArrow {
                     glyph: "›"
                     active: root.canNewer
+                    hintKey: "]"
+                    hints: root.hints
                     foreground: root.foreground
                     fontFamily: root.fontFamily
                     onClicked: root.newerRequested()
@@ -208,20 +213,27 @@ Item {
                     foreground: root.foreground
                     fontFamily: root.fontFamily
                 }
+                StatCard {
+                    width: root.cardWidth
+                    label: "Top months"
+                    value: root.summary ? root.summary.topMonths.map(function (m) {
+                        return m.label;
+                    }).join(" \u2022 ") : ""
+                    detail: root.summary ? root.summary.topMonths.map(function (m) {
+                        return Model.fmt(m.ms);
+                    }).join(" \u00b7 ") : ""
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                }
+                StatCard {
+                    width: root.cardWidth
+                    label: "Recharge month"
+                    value: root.summary && root.summary.rechargeMonth ? root.summary.rechargeMonth.label : "\u2014"
+                    detail: root.summary && root.summary.rechargeMonth ? "lightest, " + Model.fmt(root.summary.rechargeMonth.ms) : "needs two months of data"
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                }
             }
-            StatCard {
-                width: parent.width
-                label: "Top months"
-                value: root.summary ? root.summary.topMonths.map(function (m) {
-                    return m.label;
-                }).join("  ●  ") : ""
-                detail: root.summary ? root.summary.topMonths.map(function (m) {
-                    return Model.fmt(m.ms);
-                }).join("  ·  ") : ""
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-            }
-
             Rule {
                 foreground: root.foreground
             }

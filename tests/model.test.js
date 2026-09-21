@@ -687,3 +687,103 @@ test("yearSummary: streaks reset across a day off and the earlier tie wins", () 
   const r = M.yearSummary(t, 2026, "2026-09-20")
   deepEqual(r.longestStreak, { days: 2, from: "2026-03-02", to: "2026-03-03" })
 })
+
+// ---- Phase 4: settings values, record week, recharge month --------------------
+
+test("VERSION matches the manifest", () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "manifest.json"), "utf8"))
+  assert.equal(M.VERSION, manifest.version)
+})
+
+test("parseWeeks accepts only the offered lengths", () => {
+  assert.equal(M.parseWeeks(12), 12)
+  assert.equal(M.parseWeeks("24"), 24)
+  assert.equal(M.parseWeeks(36), 36)
+  assert.equal(M.parseWeeks(52), 52)
+  assert.equal(M.parseWeeks(40), 52)
+  assert.equal(M.parseWeeks(undefined), 52)
+  assert.equal(M.parseWeeks("abc"), 52)
+  assert.equal(M.parseWeeks(-1), 52)
+})
+
+test("parseBool understands hand-written values", () => {
+  assert.equal(M.parseBool(true, false), true)
+  assert.equal(M.parseBool("true", false), true)
+  assert.equal(M.parseBool(1, false), true)
+  assert.equal(M.parseBool(false, true), false)
+  assert.equal(M.parseBool("false", true), false)
+  assert.equal(M.parseBool(0, true), false)
+  assert.equal(M.parseBool(undefined, true), true)
+  assert.equal(M.parseBool("maybe", false), false)
+  assert.equal(M.parseBool(null, true), true)
+})
+
+test("weekPage carries its Monday's key", () => {
+  assert.equal(M.weekPage({}, D(2026, 9, 20), 0).key, "2026-09-14")
+  assert.equal(M.weekPage({}, D(2026, 9, 20), 2).key, "2026-08-31")
+})
+
+test("recordWeek finds the busiest week once there are two weeks of data", () => {
+  const t = {
+    "2026-08-31": H, "2026-09-01": 2 * H, // week of Aug 31: 3h
+    "2026-09-08": 4 * H, "2026-09-10": 3 * H, // week of Sep 7: 7h
+    "2026-09-15": H // week of Sep 14: 1h
+  }
+  deepEqual(M.recordWeek(t, "2026-09-20"), { key: "2026-09-07", ms: 7 * H })
+  // Under 14 days of history: nothing to compare yet.
+  assert.equal(M.recordWeek({ "2026-09-10": H, "2026-09-15": H }, "2026-09-20"), null)
+  assert.equal(M.recordWeek({}, "2026-09-20"), null)
+  // Future days never count; ties go to the earlier week.
+  const ties = { "2026-08-31": H, "2026-09-07": H, "2026-09-14": H, "2026-09-27": 9 * H }
+  assert.equal(M.recordWeek(ties, "2026-09-20").key, "2026-08-31")
+})
+
+test("recordWeek spans years and archived totals", () => {
+  const t = { "2024-03-04": 9 * H, "2026-09-16": H }
+  assert.equal(M.recordWeek(t, "2026-09-20").key, "2024-03-04")
+})
+
+test("yearSummary: recharge month is the lightest well-measured month", () => {
+  const t = {}
+  // Jan: 20 days x 3h, Feb: 20 days x 1h, Mar: 20 days x 2h, all tracked.
+  for (let d = 1; d <= 31; d++) t["2025-01-" + String(d).padStart(2, "0")] = 3 * H
+  for (let d = 1; d <= 28; d++) t["2025-02-" + String(d).padStart(2, "0")] = H
+  for (let d = 1; d <= 31; d++) t["2025-03-" + String(d).padStart(2, "0")] = 2 * H
+  const r = M.yearSummary(t, 2025, "2025-03-31") // measured Jan 1 - Mar 31
+  assert.equal(r.rechargeMonth.label, "Feb")
+  assert.equal(r.rechargeMonth.ms, 28 * H)
+  assert.equal(r.months[0].covered, 31)
+  assert.equal(r.months[1].covered, 28)
+})
+
+test("yearSummary: recharge month skips months measured under two weeks", () => {
+  // Tracking began Sep 10, so September is measured for 11 days only.
+  const t = { "2026-09-10": H, "2026-09-20": H, "2026-08-01": 5 * H }
+  const early = M.yearSummary(t, 2026, "2026-09-20")
+  assert.equal(early.months[8].covered, 20 - 0) // span starts at the first recorded day, Aug 1
+  // Only one month is measured for two weeks or more: nothing to compare.
+  const t2 = { "2026-09-01": H, "2026-09-20": H }
+  assert.equal(M.yearSummary(t2, 2026, "2026-09-20").rechargeMonth, null)
+  // A fresh month with a few days is ignored in favour of full ones.
+  const t3 = {}
+  for (let d = 1; d <= 31; d++) t3["2026-07-" + String(d).padStart(2, "0")] = 4 * H
+  for (let d = 1; d <= 31; d++) t3["2026-08-" + String(d).padStart(2, "0")] = 2 * H
+  t3["2026-09-01"] = 1 // September is barely used, and only its first days have been measured
+  const r3 = M.yearSummary(t3, 2026, "2026-09-10")
+  assert.equal(r3.months[8].covered, 9) // Sep 1-9: the 10th has no time yet, so it is left out
+  assert.equal(r3.rechargeMonth.label, "Aug") // Sep is skipped: under two weeks measured
+  // Measured for two weeks or more, the same tiny month is the lightest.
+  assert.equal(M.yearSummary(t3, 2026, "2026-09-20").rechargeMonth.label, "Sep")
+})
+
+test("fmtBytes and storageSummary", () => {
+  assert.equal(M.fmtBytes(0), "0 B")
+  assert.equal(M.fmtBytes(512), "512 B")
+  assert.equal(M.fmtBytes(2048), "2 KB")
+  assert.equal(M.fmtBytes(5 * 1024 * 1024), "5.0 MB")
+  assert.equal(M.fmtBytes(NaN), "0 B")
+  const days = M.addTime({}, "2026-09-20", "foot", 5000)
+  const text = M.storageSummary(days, { "2024-01-01": 100, "2024-01-02": 200 })
+  assert.match(text, /^\d+ (B|KB) · 1 day in detail · 2 archived \(totals kept forever\)$/)
+  assert.match(M.storageSummary({}, {}), /0 days in detail · 0 archived/)
+})

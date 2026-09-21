@@ -26,6 +26,18 @@ Item {
     property bool active: true
     property color foreground: Color.foreground
     property string fontFamily: Style.font.family
+    // Preferences the settings menu changes (the owner stores them).
+    property bool iconOnly: false
+    property bool showInsights: true
+    property bool showYearLink: true
+    property bool playful: true
+    property int weekCap: 52
+    property color danger: Color.urgent
+
+    // A preference was changed in the settings menu.
+    signal settingChanged(string key, var value)
+    signal resetTodayRequested
+    signal wipeAllRequested
 
     // ---- State -------------------------------------------------------------
     property string selectedKey: ""   // "" means today
@@ -33,10 +45,11 @@ Item {
     property bool showMore: false
     property bool showShare: false
     property int hoverIndex: -1
-    property string view: "day"       // "day" or "year"
+    // Key hints ("f"): small key caps naming each control's shortcut.
+    property bool hints: false
+    property string view: "day"       // "day", "year" or "settings"
     property int yearShown: 0         // 0 means the current year
 
-    readonly property int weekCap: 52
     readonly property int maxLegendApps: 6
     readonly property string glyph: "󰔟"
 
@@ -52,7 +65,10 @@ Item {
     readonly property var slices: active ? Model.donutSlices(dayData, appNames, maxLegendApps, 0.03) : []
     // The apps the legend doesn't list (they sit under "Other" in the donut).
     readonly property var moreRows: active && showMore ? Model.topApps(dayData, 100000, appNames).slice(headCount) : []
-    readonly property var page: active ? Model.weekPage(days, today, back, ignoredApps, appNames) : ({ label: "", total: 0, share: 0, days: [] })
+    // Never further back than the graph reach allows, even if it was shortened
+    // while paged out.
+    readonly property int shownBack: Math.min(back, lastBack)
+    readonly property var page: active ? Model.weekPage(days, today, shownBack, ignoredApps, appNames) : ({ label: "", total: 0, share: 0, days: [] })
     readonly property var insights: active ? Model.dayInsights(days, activeKey, todayKey, page, ignoredApps, appNames) : []
     readonly property var goal: Model.goalProgress(dayData.total, dailyGoalHours)
     readonly property bool hasOther: slices.length > 0 && slices[slices.length - 1].other === true
@@ -75,7 +91,25 @@ Item {
     }
 
     // ---- Yearly view -------------------------------------------------------
-    readonly property var totals: active && view === "year" ? Model.dayTotals(days, archive, ignoredApps, appNames) : ({})
+    readonly property var totals: active ? Model.dayTotals(days, archive, ignoredApps, appNames) : ({})
+    readonly property string recordKey: {
+        var r = Model.recordWeek(totals, todayKey);
+        return r ? r.key : "";
+    }
+    // Nothing has ever been recorded: show a short hint instead of a blank day.
+    readonly property bool fresh: Object.keys(days).length === 0 && Object.keys(archive).length === 0
+    // Today's apps (minus ignored ones), offered as tap-to-ignore suggestions.
+    readonly property var todayApps: view === "settings" ? Model.topApps(Model.visibleDay(days[todayKey] || Model.newDay(), ignoredApps, appNames), 12, appNames).filter(function (r) {
+        return !r.other;
+    }).map(function (r) {
+        return r.name;
+    }) : []
+    readonly property string storageText: view === "settings" ? Model.storageSummary(days, archive) : ""
+    // True while a settings text field has focus; the popup then stops treating
+    // typing as shortcuts.
+    readonly property bool editing: view === "settings" && settingsView.editing
+    // The hourglass turns over once per hour (see the timer at the bottom).
+    property int flips: 0
     readonly property var yearList: Model.yearsRange(totals, todayKey)
     readonly property int currentYear: today.getFullYear()
     readonly property int year: yearShown > 0 ? yearShown : currentYear
@@ -93,21 +127,39 @@ Item {
 
     // ---- Actions -----------------------------------------------------------
     function reset() {
+        hints = false;
         selectedKey = "";
         back = 0;
         showMore = false;
         hoverIndex = -1;
+        settingsView.releaseFocus();
         view = "day";
         yearShown = 0;
     }
 
     function openYear() {
+        if (!showYearLink)
+            return;
         yearShown = 0;
         view = "year";
     }
 
     function closeYear() {
         view = "day";
+    }
+
+    function openSettings() {
+        view = "settings";
+    }
+
+    // Backs out of the yearly overview or the settings menu. Returns false when
+    // already on the day view, so the caller can close the popup instead.
+    function leaveView() {
+        if (view === "day")
+            return false;
+        settingsView.releaseFocus();
+        view = "day";
+        return true;
     }
 
     // Older/newer year, kept between the first recorded year and this one.
@@ -125,6 +177,13 @@ Item {
         back = Math.max(0, Math.min(lastBack, back + delta));
     }
 
+    // Keys 1-7: inspect Monday to Sunday of the week on screen.
+    function selectDayNumber(n) {
+        var d = page.days[n - 1];
+        if (view === "day" && d && !d.future)
+            selectDay(d.key);
+    }
+
     // Arrow keys: move the selected day and follow it to its week.
     function stepDay(delta) {
         var next = Model.shiftDay(activeKey, delta, todayKey, oldestKey);
@@ -135,7 +194,32 @@ Item {
     }
 
     implicitWidth: Style.space(460)
-    implicitHeight: view === "year" ? yearView.implicitHeight : column.implicitHeight
+    implicitHeight: view === "year" ? yearView.implicitHeight : (view === "settings" ? settingsView.implicitHeight : column.implicitHeight)
+
+    SettingsView {
+        id: settingsView
+        width: parent.width
+        visible: root.view === "settings"
+        iconOnly: root.iconOnly
+        showInsights: root.showInsights
+        showYearLink: root.showYearLink
+        playful: root.playful
+        weekCap: root.weekCap
+        dailyGoalHours: root.dailyGoalHours
+        ignoredApps: root.ignoredApps
+        appNames: root.appNames
+        todayApps: root.todayApps
+        storageText: root.storageText
+        danger: root.danger
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        onSettingChanged: function (key, value) {
+            root.settingChanged(key, value);
+        }
+        onResetTodayRequested: root.resetTodayRequested()
+        onWipeAllRequested: root.wipeAllRequested()
+        onBackRequested: root.leaveView()
+    }
 
     YearView {
         id: yearView
@@ -146,6 +230,7 @@ Item {
         currentMonth: root.year === root.currentYear ? root.today.getMonth() : -1
         canOlder: root.yearList.length > 0 && root.year > root.yearList[0]
         canNewer: root.year < root.currentYear
+        hints: root.hints
         foreground: root.foreground
         fontFamily: root.fontFamily
         onBackRequested: root.closeYear()
@@ -174,8 +259,16 @@ Item {
                     color: root.foreground
                     font.family: root.fontFamily
                     font.pixelSize: 40
+                    rotation: root.flips * 180
+                    Behavior on rotation {
+                        NumberAnimation {
+                            duration: 700
+                            easing.type: Easing.OutBack
+                        }
+                    }
                     MouseArea {
                         anchors.fill: parent
+                        enabled: root.showYearLink
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.openYear()
                     }
@@ -206,21 +299,59 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Style.space(6)
 
-                Text {
+                Row {
                     anchors.right: parent.right
-                    textFormat: Text.PlainText
-                    text: "Year \u203A"
-                    color: yearMouse.containsMouse ? root.foreground : root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
-                    font.underline: yearMouse.containsMouse
-                    MouseArea {
-                        id: yearMouse
-                        anchors.fill: parent
-                        anchors.margins: -Style.space(4)
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.openYear()
+                    spacing: Style.space(12)
+
+                    Text {
+                        visible: root.showYearLink
+                        textFormat: Text.PlainText
+                        text: "Year \u203A"
+                        color: yearMouse.containsMouse ? root.foreground : root.dim
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.caption
+                        font.underline: yearMouse.containsMouse
+                        KeyBadge {
+                            anchors.right: parent.left
+                            anchors.rightMargin: Style.space(4)
+                            anchors.verticalCenter: parent.verticalCenter
+                            key: "y"
+                            show: root.hints
+                            foreground: root.foreground
+                            fontFamily: root.fontFamily
+                        }
+                        MouseArea {
+                            id: yearMouse
+                            anchors.fill: parent
+                            anchors.margins: -Style.space(4)
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.openYear()
+                        }
+                    }
+                    Text {
+                        textFormat: Text.PlainText
+                        text: "\uF013"
+                        color: gearMouse.containsMouse ? root.foreground : root.dim
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.body
+                        KeyBadge {
+                            anchors.right: parent.left
+                            anchors.rightMargin: Style.space(4)
+                            anchors.verticalCenter: parent.verticalCenter
+                            key: "c"
+                            show: root.hints
+                            foreground: root.foreground
+                            fontFamily: root.fontFamily
+                        }
+                        MouseArea {
+                            id: gearMouse
+                            anchors.fill: parent
+                            anchors.margins: -Style.space(4)
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.openSettings()
+                        }
                     }
                 }
                 Text {
@@ -232,6 +363,15 @@ Item {
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                     font.underline: todayMouse.containsMouse
+                    KeyBadge {
+                        anchors.right: parent.left
+                        anchors.rightMargin: Style.space(4)
+                        anchors.verticalCenter: parent.verticalCenter
+                        key: "t"
+                        show: root.hints
+                        foreground: root.foreground
+                        fontFamily: root.fontFamily
+                    }
                     MouseArea {
                         id: todayMouse
                         anchors.fill: parent
@@ -242,6 +382,17 @@ Item {
                     }
                 }
             }
+        }
+
+        Text {
+            visible: root.fresh
+            width: parent.width
+            textFormat: Text.PlainText
+            text: "Nothing tracked yet. Time is counted while a window has focus."
+            wrapMode: Text.WordWrap
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
         }
 
         // ---- Daily goal (today only, and only when one is set) -----------------
@@ -347,6 +498,15 @@ Item {
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             font.bold: true
+            KeyBadge {
+                anchors.right: parent.left
+                anchors.rightMargin: Style.space(4)
+                anchors.verticalCenter: parent.verticalCenter
+                key: "m"
+                show: root.hints
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+            }
             MouseArea {
                 id: moreMouse
                 anchors.fill: parent
@@ -406,8 +566,10 @@ Item {
             page: root.page
             selectedKey: root.activeKey
             showShare: root.showShare
-            canOlder: root.back < root.lastBack
-            canNewer: root.back > 0
+            record: root.recordKey !== "" && root.page.key === root.recordKey
+            canOlder: root.shownBack < root.lastBack
+            canNewer: root.shownBack > 0
+            hints: root.hints
             foreground: root.foreground
             fontFamily: root.fontFamily
             onDaySelected: function (key) {
@@ -419,11 +581,13 @@ Item {
         }
 
         Rule {
+            visible: root.showInsights
             foreground: root.foreground
         }
 
         // ---- Insights ----------------------------------------------------------
         Column {
+            visible: root.showInsights
             width: parent.width
             spacing: Style.space(4)
 
@@ -460,4 +624,19 @@ Item {
     }
 
     readonly property int dayAppCount: Object.keys(dayData.apps).length
+
+    // Turns the hourglass over when the hour changes.
+    property int lastHour: new Date().getHours()
+    Timer {
+        interval: 30000
+        repeat: true
+        running: root.playful
+        onTriggered: {
+            var hour = new Date().getHours();
+            if (hour !== root.lastHour) {
+                root.lastHour = hour;
+                root.flips++;
+            }
+        }
+    }
 }

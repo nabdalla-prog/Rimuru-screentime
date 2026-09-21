@@ -9,6 +9,9 @@ Item {
     property bool active: true
     property color foreground: Color.foreground
     property string fontFamily: Style.font.family
+    // Key hints: the key that triggers this arrow.
+    property string hintKey: ""
+    property bool hints: false
 
     signal clicked
 
@@ -22,6 +25,13 @@ Item {
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.title + 4
+    }
+    KeyBadge {
+        anchors.centerIn: parent
+        key: root.hintKey
+        show: root.hints && root.active
+        foreground: root.foreground
+        fontFamily: root.fontFamily
     }
     MouseArea {
         id: mouse

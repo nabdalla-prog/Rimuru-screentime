@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "rimuru.screentime",
   "name": "Screen Time",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "author": "nabdalla",
-  "description": "Daily screen time per app in your Omarchy bar: sees what runs inside terminals, names Steam games, folds browsers and web apps. The popup has a donut chart, a 52-week trend, insights and an optional daily goal, plus a yearly overview with monthly bars and highlights that reaches back to your first day. Fully local: nothing leaves your machine.",
+  "description": "Daily screen time per app in your Omarchy bar: sees what runs inside terminals, names Steam games, folds browsers and web apps. The popup has a donut chart, a 52-week trend, insights, a yearly overview that reaches back to your first day, a daily goal and a settings menu. Fully local: nothing leaves your machine.",
   "kinds": [
     "service",
     "bar-widget"
@@ -29,6 +29,24 @@
         "max": 24,
         "step": 1,
         "defaultValue": 0
+      },
+      {
+        "key": "weeks",
+        "type": "enum",
+        "label": "Weekly graph reach (weeks)",
+        "options": [
+          "12",
+          "24",
+          "36",
+          "52"
+        ],
+        "defaultValue": "52"
+      },
+      {
+        "key": "iconOnly",
+        "type": "boolean",
+        "label": "Icon only in the bar",
+        "defaultValue": false
       },
       {
         "key": "ignoredApps",

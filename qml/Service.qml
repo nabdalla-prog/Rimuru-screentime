@@ -198,6 +198,24 @@ Item {
         dirty = true;
     }
 
+    // Clears today only; earlier days and the archive are untouched. The window
+    // keeps being timed from now, so cleared time can't come back.
+    function resetToday() {
+        var next = Object.assign({}, days);
+        delete next[todayKey];
+        days = next;
+        dirty = true;
+        save();
+    }
+
+    // Erases everything, archive included. There is no undo.
+    function resetAll() {
+        days = ({});
+        archive = ({});
+        dirty = true;
+        save();
+    }
+
     // Days that have aged out of the detailed window move to the archive.
     function rollHistory(now) {
         var rolled = Model.rollArchive(days, archive, Model.KEEP_DAYS, now);
