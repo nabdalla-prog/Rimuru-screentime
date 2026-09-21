@@ -71,21 +71,33 @@ test("addTime ignores empty app, zero, negative and non-finite time", () => {
   assert.equal(M.addTime(a, "k", "foot", Infinity), a)
 })
 
-test("pruneDays keeps the window and drops older days", () => {
+test("rollArchive moves aged-out days into the archive as totals, never drops them", () => {
   const days = {
-    "2025-09-19": M.newDay(),
-    "2025-09-20": M.newDay(),
-    "2026-09-20": M.newDay()
+    "2025-09-19": { total: 5000, apps: { a: 5000 } }, // one day past the window
+    "2025-09-20": { total: 7000, apps: { a: 7000 } }, // last day inside it
+    "2026-09-20": { total: 9000, apps: { a: 9000 } }
   }
-  const kept = M.pruneDays(days, 365, D(2026, 9, 20))
-  deepEqual(Object.keys(kept).sort(), ["2025-09-20", "2026-09-20"])
+  const r = M.rollArchive(days, {}, 365, D(2026, 9, 20))
+  deepEqual(Object.keys(r.days).sort(), ["2025-09-20", "2026-09-20"])
+  deepEqual(r.archive, { "2025-09-19": 5000 })
+  // inputs untouched
+  assert.equal(Object.keys(days).length, 3)
+})
+
+test("rollArchive keeps what the archive already holds and skips empty days", () => {
+  const days = { "2024-01-01": { total: 0, apps: {} }, "2024-01-02": { total: 100, apps: { a: 100 } } }
+  const r = M.rollArchive(days, { "2023-05-05": 42 }, 365, D(2026, 9, 20))
+  deepEqual(r.archive, { "2023-05-05": 42, "2024-01-02": 100 })
+  deepEqual(r.days, {})
+  const again = M.rollArchive(r.days, r.archive, 365, D(2026, 9, 20))
+  deepEqual(again.archive, r.archive) // idempotent
 })
 
 test("parseHistory: blank and missing days are empty but valid", () => {
-  deepEqual(M.parseHistory(""), { ok: true, days: {} })
-  deepEqual(M.parseHistory("  \n"), { ok: true, days: {} })
-  deepEqual(M.parseHistory(undefined), { ok: true, days: {} })
-  deepEqual(M.parseHistory("{}"), { ok: true, days: {} })
+  deepEqual(M.parseHistory(""), { ok: true, days: {}, archive: {} })
+  deepEqual(M.parseHistory("  \n"), { ok: true, days: {}, archive: {} })
+  deepEqual(M.parseHistory(undefined), { ok: true, days: {}, archive: {} })
+  deepEqual(M.parseHistory("{}"), { ok: true, days: {}, archive: {} })
 })
 
 test("parseHistory: corrupt files are reported, not swallowed", () => {
@@ -500,4 +512,178 @@ test("donutSlices merges apps that share a custom name", () => {
   const s = M.donutSlices(day, { zen: "Browser", firefox: "Browser" }, 6, 0.03)
   deepEqual(s.map((x) => x.name), ["Browser", "Nvim"])
   assert.equal(s[0].ms, 80)
+})
+
+// ---- Phase 3: archive and yearly view ----------------------------------------
+
+const H = 3600000
+
+test("parseHistory reads the archive, drops bad entries, and old files have none", () => {
+  const text = JSON.stringify({
+    version: 2,
+    days: {},
+    archive: { "2024-05-01": 1000.4, "2024-05-02": 0, "2024-05-03": -5, "2024-05-04": "x", "junk": 5, "2024-05-05": 2000 }
+  })
+  const r = M.parseHistory(text)
+  assert.equal(r.ok, true)
+  deepEqual(r.archive, { "2024-05-01": 1000, "2024-05-05": 2000 })
+  // A version-1 file (no archive key) still loads.
+  deepEqual(M.parseHistory('{"version":1,"days":{}}').archive, {})
+  // An archive of the wrong type is an unreadable file, not silently emptied.
+  assert.equal(M.parseHistory('{"archive": []}').ok, false)
+  assert.equal(M.parseHistory('{"archive": "x"}').ok, false)
+  assert.equal(M.parseHistory('{"archive": null}').ok, false)
+})
+
+test("serialize writes version 2 with a sorted archive and round-trips", () => {
+  const days = M.addTime({}, "2026-09-20", "foot", 5000)
+  const archive = { "2025-03-02": 200, "2024-12-31": 100 }
+  const text = M.serialize(days, archive)
+  const parsed = JSON.parse(text)
+  assert.equal(parsed.version, 2)
+  deepEqual(Object.keys(parsed.archive), ["2024-12-31", "2025-03-02"])
+  const back = M.parseHistory(text)
+  deepEqual(back.days, days)
+  deepEqual(back.archive, archive)
+  // no archive argument is fine
+  deepEqual(JSON.parse(M.serialize(days)).archive, {})
+})
+
+test("dayTotals: archive underneath, detail on top, ignored apps left out of detail", () => {
+  const days = {
+    "2026-09-20": { total: 900, apps: { rofi: 800, nvim: 100 } },
+    "2026-09-19": { total: 500, apps: { rofi: 500 } }
+  }
+  const archive = { "2025-01-01": 4000, "2026-09-20": 1 }
+  const t = M.dayTotals(days, archive, ["rofi"], {})
+  assert.equal(t["2025-01-01"], 4000)
+  assert.equal(t["2026-09-20"], 100) // detail wins over the archive entry
+  assert.equal(t["2026-09-19"], undefined) // everything on it was ignored
+  assert.equal(M.dayTotals(days, archive, [], {})["2026-09-19"], 500)
+  deepEqual(M.dayTotals({}, {}, [], {}), {})
+})
+
+test("yearsRange runs from the first recorded year to this one with no gaps", () => {
+  deepEqual(M.yearsRange({}, "2026-09-20"), [])
+  deepEqual(M.yearsRange({ "2026-01-02": 1 }, "2026-09-20"), [2026])
+  deepEqual(M.yearsRange({ "2024-05-01": 1, "2026-09-01": 1 }, "2026-09-20"), [2024, 2025, 2026])
+  deepEqual(M.yearsRange({ "2027-01-01": 1 }, "2026-09-20"), []) // future only
+})
+
+test("daysInYear, dateTitle and rangeLabel", () => {
+  assert.equal(M.daysInYear(2024), 366)
+  assert.equal(M.daysInYear(2025), 365)
+  assert.equal(M.daysInYear(1900), 365)
+  assert.equal(M.daysInYear(2000), 366)
+  assert.equal(M.dateTitle("2026-09-19"), "Sat, Sep 19")
+  assert.equal(M.dateTitle("nope"), "nope")
+  assert.equal(M.rangeLabel("2026-09-03", "2026-09-11"), "Sep 3 – Sep 11")
+  assert.equal(M.rangeLabel("2026-09-03", "2026-09-03"), "Sep 3")
+  assert.equal(M.rangeLabel("bad", "2026-09-03"), "")
+})
+
+test("yearSummary: a partial first year is measured from the first recorded day", () => {
+  const t = { "2026-09-14": H, "2026-09-15": 2 * H, "2026-09-16": 3 * H, "2026-09-18": H, "2026-09-20": 2 * H }
+  const r = M.yearSummary(t, 2026, "2026-09-20")
+  assert.equal(r.total, 9 * H)
+  assert.equal(r.activeDays, 5)
+  assert.equal(r.spanDays, 7) // Sep 14 - Sep 20, not the whole year
+  assert.equal(r.averageDay, 1.8 * H)
+  deepEqual(r.longestStreak, { days: 3, from: "2026-09-14", to: "2026-09-16" })
+  deepEqual(r.longestBreak, { days: 1, from: "2026-09-17", to: "2026-09-17" }) // ties go to the earlier one
+  deepEqual(r.peakDay, { key: "2026-09-16", ms: 3 * H })
+  assert.equal(r.busiestWeek, null) // needs two weeks of span
+  deepEqual(r.topMonths.map((m) => m.label), ["Sep"])
+  assert.equal(r.months.length, 12)
+  assert.equal(r.months[8].ms, 9 * H)
+  assert.equal(r.months[8].days, 5)
+  assert.equal(r.months[8].outside, false)
+  assert.equal(r.months[0].outside, true) // before tracking began
+  assert.equal(r.months[11].outside, true) // after today
+  assert.equal(r.months[8].rel, 1)
+})
+
+test("yearSummary: a full past year, hand-checked", () => {
+  const t = {
+    "2025-01-06": H, "2025-01-07": 2 * H, "2025-01-08": H, // Mon-Wed
+    "2025-03-10": 5 * H, // a Monday
+    "2025-12-31": H // a Wednesday
+  }
+  const r = M.yearSummary(t, 2025, "2026-09-20")
+  assert.equal(r.total, 10 * H)
+  assert.equal(r.activeDays, 5)
+  assert.equal(r.spanDays, 360) // Jan 6 - Dec 31 2025
+  assert.equal(r.averageDay, 2 * H)
+  deepEqual(r.longestStreak, { days: 3, from: "2025-01-06", to: "2025-01-08" })
+  // Mar 11 - Dec 30 is day 70 to day 364 of the year: 295 days off.
+  deepEqual(r.longestBreak, { days: 295, from: "2025-03-11", to: "2025-12-30" })
+  deepEqual(r.peakDay, { key: "2025-03-10", ms: 5 * H })
+  assert.equal(r.busiestWeek.ms, 5 * H)
+  assert.equal(r.busiestWeek.key, "2025-03-10")
+  assert.equal(r.busiestWeek.label, "Mar 10 – Mar 16, 2025 · W11")
+  deepEqual(r.topMonths.map((m) => m.label + ":" + m.ms / H), ["Mar:5", "Jan:4", "Dec:1"])
+  // Weekday rhythm averages every span day with that weekday, days off included.
+  deepEqual(r.weekdays.map((d) => d.weekday), ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+  assert.ok(Math.abs(r.weekdays[0].ms - (6 * H) / 52) < 1e-6) // 52 Mondays: 1h + 5h
+  assert.equal(r.weekdays[0].rel, 1)
+  assert.ok(Math.abs(r.weekdays[1].rel - 2 / 6) < 1e-9) // Tuesday: 2h over 52
+  assert.equal(r.weekdays[3].ms, 0)
+})
+
+test("yearSummary: today with no time yet is left out, so it can't be a break", () => {
+  const t = { "2026-09-18": 2 * H, "2026-09-19": H }
+  const r = M.yearSummary(t, 2026, "2026-09-20")
+  assert.equal(r.spanDays, 2)
+  assert.equal(r.longestBreak, null)
+  deepEqual(r.longestStreak, { days: 2, from: "2026-09-18", to: "2026-09-19" })
+  // Once today has time it counts.
+  const withToday = Object.assign({}, t, { "2026-09-20": H })
+  assert.equal(M.yearSummary(withToday, 2026, "2026-09-20").spanDays, 3)
+})
+
+test("yearSummary: a break can run right up to the end of a past year", () => {
+  const r = M.yearSummary({ "2025-06-01": H, "2025-06-02": H, "2026-02-01": H }, 2025, "2026-09-20")
+  deepEqual(r.longestBreak, { days: 212, from: "2025-06-03", to: "2025-12-31" })
+})
+
+test("yearSummary: leap years have 29 days in February", () => {
+  const r = M.yearSummary({ "2024-02-29": H }, 2024, "2025-06-01")
+  assert.equal(r.spanDays, 307) // Feb 29 - Dec 31 2024
+  deepEqual(r.longestBreak, { days: 306, from: "2024-03-01", to: "2024-12-31" })
+  assert.equal(r.months[1].days, 1)
+})
+
+test("yearSummary: days after today never count", () => {
+  const r = M.yearSummary({ "2026-09-20": H, "2026-09-25": 9 * H }, 2026, "2026-09-20")
+  assert.equal(r.total, H)
+  assert.equal(r.activeDays, 1)
+  assert.equal(r.peakDay.ms, H)
+})
+
+test("yearSummary: nothing to show returns null", () => {
+  assert.equal(M.yearSummary({}, 2026, "2026-09-20"), null)
+  assert.equal(M.yearSummary({ "2026-09-20": H }, 2025, "2026-09-20"), null) // before tracking began
+  assert.equal(M.yearSummary({ "2026-09-20": H }, 2027, "2026-09-20"), null) // in the future
+  assert.equal(M.yearSummary({ "2024-05-01": H, "2026-09-01": H }, 2025, "2026-09-20"), null) // a year off
+  assert.equal(M.yearSummary({ "2026-09-20": H }, 2026, "garbage"), null)
+})
+
+test("yearSummary: a week straddling New Year counts only this year's days", () => {
+  const t = {}
+  for (let d = 1; d <= 14; d++) t["2025-12-" + String(d).padStart(2, "0")] = H / 4
+  t["2025-12-29"] = 2 * H
+  t["2025-12-30"] = 2 * H
+  t["2025-12-31"] = 2 * H
+  t["2026-01-01"] = 9 * H // next year: must not leak into 2025's week
+  const r = M.yearSummary(t, 2025, "2026-09-20")
+  assert.equal(r.busiestWeek.key, "2025-12-29")
+  assert.equal(r.busiestWeek.ms, 6 * H)
+  assert.equal(r.total, 3.5 * H + 6 * H)
+})
+
+test("yearSummary: streaks reset across a day off and the earlier tie wins", () => {
+  const t = {}
+  ;["2026-03-02", "2026-03-03", "2026-03-05", "2026-03-06", "2026-03-09"].forEach((k) => (t[k] = H))
+  const r = M.yearSummary(t, 2026, "2026-09-20")
+  deepEqual(r.longestStreak, { days: 2, from: "2026-03-02", to: "2026-03-03" })
 })

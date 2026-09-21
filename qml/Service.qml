@@ -60,6 +60,8 @@ Item {
 
     // Always replaced, never mutated in place, so bindings re-evaluate.
     property var days: ({})
+    // Totals of days older than KEEP_DAYS, kept forever: { "YYYY-MM-DD": ms }.
+    property var archive: ({})
     property string todayKey: Model.dayKey(new Date())
     readonly property var today: days[todayKey] || Model.newDay()
     // Today without ignored apps: this is what every display shows.
@@ -181,7 +183,7 @@ Item {
         var key = Model.dayKey(new Date(now));
         if (key !== todayKey) {
             todayKey = key;
-            days = Model.pruneDays(days, Model.KEEP_DAYS, new Date(now));
+            rollHistory(new Date(now));
             dirty = true;
         }
 
@@ -196,11 +198,18 @@ Item {
         dirty = true;
     }
 
+    // Days that have aged out of the detailed window move to the archive.
+    function rollHistory(now) {
+        var rolled = Model.rollArchive(days, archive, Model.KEEP_DAYS, now);
+        days = rolled.days;
+        archive = rolled.archive;
+    }
+
     function save() {
         if (!ready || !dirty)
             return;
         dirty = false;
-        historyFile.setText(Model.serialize(days));
+        historyFile.setText(Model.serialize(days, archive));
     }
 
     // One line per app today, for `omarchy-shell rimuru.screentime apps`.
@@ -237,7 +246,9 @@ Item {
         onLoaded: {
             var parsed = Model.parseHistory(text());
             if (parsed.ok) {
-                root.days = Model.normalizeKeys(Model.pruneDays(parsed.days, Model.KEEP_DAYS, new Date()));
+                var rolled = Model.rollArchive(Model.normalizeKeys(parsed.days), parsed.archive, Model.KEEP_DAYS, new Date());
+                root.days = rolled.days;
+                root.archive = rolled.archive;
                 root.dirty = true;
                 root.start();
             } else {

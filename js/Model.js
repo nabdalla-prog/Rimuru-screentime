@@ -3,7 +3,10 @@
 // Pure logic for the screen-time plugin: no QML, no I/O, so it can be unit
 // tested with plain Node (see tests/model.test.js).
 //
-// History shape: { "<YYYY-MM-DD>": { total: <ms>, apps: { "<appId>": <ms> } } }
+// History shape: `days` is { "<YYYY-MM-DD>": { total: <ms>, apps: { "<appId>": <ms> } } }
+// and covers the last KEEP_DAYS days in full. Older days are rolled into
+// `archive`, { "<YYYY-MM-DD>": <total ms> }: the per-app detail is forgotten but
+// each day's total is kept forever, which is what the yearly view reads.
 // All durations are integer milliseconds. Day keys use the local timezone.
 
 var KEEP_DAYS = 365
@@ -24,14 +27,17 @@ function validMs(v) {
   return typeof v === "number" && isFinite(v) && v >= 0
 }
 
-// Parse the history file. Returns { ok: true, days } or { ok: false } when the
-// file is unreadable, so the caller can set it aside instead of overwriting it.
-// Blank text is a valid, empty history. Entries that don't look right are
-// dropped rather than trusted, and each day's total is recomputed from its apps
-// so a hand-edited or half-written file can never show inconsistent numbers.
+// Parse the history file. Returns { ok: true, days, archive } or { ok: false }
+// when the file is unreadable, so the caller can set it aside instead of
+// overwriting it. Blank text is a valid, empty history, and files written
+// before the archive existed simply have none. Entries that don't look right
+// are dropped rather than trusted, and each day's total is recomputed from its
+// apps so a hand-edited or half-written file can never show inconsistent
+// numbers.
 function parseHistory(text) {
+  var empty = { ok: true, days: {}, archive: {} }
   if (text === undefined || text === null || String(text).trim() === "")
-    return { ok: true, days: {} }
+    return empty
 
   var raw
   try {
@@ -42,8 +48,19 @@ function parseHistory(text) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     return { ok: false }
 
+  var archive = {}
+  if (raw.archive !== undefined) {
+    if (!raw.archive || typeof raw.archive !== "object" || Array.isArray(raw.archive))
+      return { ok: false }
+    for (var day in raw.archive) {
+      var total = raw.archive[day]
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day) && validMs(total) && total > 0)
+        archive[day] = Math.round(total)
+    }
+  }
+
   var source = raw.days
-  if (source === undefined) return { ok: true, days: {} }
+  if (source === undefined) return { ok: true, days: {}, archive: archive }
   if (!source || typeof source !== "object" || Array.isArray(source))
     return { ok: false }
 
@@ -53,20 +70,24 @@ function parseHistory(text) {
     var entry = source[key]
     if (!entry || typeof entry !== "object" || !entry.apps || typeof entry.apps !== "object")
       continue
-    var day = newDay()
+    var d = newDay()
     for (var app in entry.apps) {
       var ms = entry.apps[app]
       if (!validMs(ms) || ms === 0) continue
-      day.apps[app] = Math.round(ms)
-      day.total += Math.round(ms)
+      d.apps[app] = Math.round(ms)
+      d.total += Math.round(ms)
     }
-    days[key] = day
+    days[key] = d
   }
-  return { ok: true, days: days }
+  return { ok: true, days: days, archive: archive }
 }
 
-function serialize(days) {
-  return JSON.stringify({ version: 1, days: days }, null, 2) + "\n"
+// The archive is written with sorted keys so the file diffs and reads well.
+function serialize(days, archive) {
+  var sorted = {}
+  var source = archive || {}
+  Object.keys(source).sort().forEach(function (k) { sorted[k] = source[k] })
+  return JSON.stringify({ version: 2, days: days, archive: sorted }, null, 2) + "\n"
 }
 
 // Returns a new history with `ms` added to `app` on day `key`. The input is
@@ -81,13 +102,18 @@ function addTime(days, key, app, ms) {
   return next
 }
 
-// Drops days older than `keepDays` before `now`.
-function pruneDays(days, keepDays, now) {
+// Splits history at `keepDays` before `now`: newer days stay in full, older
+// ones move into the archive as just their total (days with no time aren't
+// worth a line). Nothing is ever dropped, and the inputs aren't modified.
+function rollArchive(days, archive, keepDays, now) {
   var cutoff = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - keepDays))
-  var next = {}
-  for (var key in days)
-    if (key >= cutoff) next[key] = days[key]
-  return next
+  var kept = {}
+  var rolled = Object.assign({}, archive)
+  for (var key in days) {
+    if (key >= cutoff) kept[key] = days[key]
+    else if (days[key].total > 0) rolled[key] = days[key].total
+  }
+  return { days: kept, archive: rolled }
 }
 
 // "<1m", "42m", "2h", "2h 5m". Whole minutes, rounded down.
@@ -428,14 +454,18 @@ function shiftDay(key, delta, todayKey, oldestKey) {
   return next
 }
 
+// "Sat, Sep 19".
+function dateTitle(key) {
+  var d = parseKey(key)
+  return d ? WEEKDAYS[d.getDay()] + ", " + MONTHS[d.getMonth()] + " " + d.getDate() : String(key)
+}
+
 // "Today", "Yesterday" or "Sat, Sep 19".
 function dayTitle(key, todayKey) {
   if (key === todayKey) return "Today"
-  var d = parseKey(key)
   var today = parseKey(todayKey)
-  if (!d || !today) return String(key)
-  if (dayKey(addDays(today, -1)) === key) return "Yesterday"
-  return WEEKDAYS[d.getDay()] + ", " + MONTHS[d.getMonth()] + " " + d.getDate()
+  if (today && dayKey(addDays(today, -1)) === key) return "Yesterday"
+  return dateTitle(key)
 }
 
 // "Aug 31 \u2013 Sep 6, 2026 \u00b7 W36". A week that straddles New Year names
@@ -539,4 +569,161 @@ function donutSlices(day, names, maxApps, minShare) {
     start += slices[j].share
   }
   return slices
+}
+
+// ---- Yearly view -------------------------------------------------------------------
+
+function daysInYear(year) {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 366 : 365
+}
+
+// Every day's total in one map: the permanent archive underneath, the detailed
+// days on top (they win where both exist). Ignored apps are left out of the
+// detailed days, since their per-app time is still known there; archived days
+// are totals only and can't be filtered.
+function dayTotals(days, archive, ignored, names) {
+  var out = {}
+  for (var a in archive)
+    if (validMs(archive[a]) && archive[a] > 0) out[a] = archive[a]
+  for (var key in days) {
+    var day = visibleDay(days[key], ignored, names)
+    if (day && day.total > 0) out[key] = day.total
+    else delete out[key]
+  }
+  return out
+}
+
+// Years from the first recorded day to the current one, oldest first, with no
+// gaps, so paging never skips a year that has nothing in it. Days after today
+// are ignored.
+function yearsRange(totals, todayKey) {
+  var first = null
+  for (var key in totals)
+    if (key <= todayKey && (first === null || key < first)) first = key
+  var today = parseKey(todayKey)
+  var start = first === null ? null : parseKey(first)
+  if (!today || !start) return []
+  var out = []
+  for (var y = start.getFullYear(); y <= today.getFullYear(); y++) out.push(y)
+  return out
+}
+
+// "Sep 3 \u2013 Sep 11", or just "Sep 3" for a single day.
+function rangeLabel(fromKey, toKey) {
+  var from = parseKey(fromKey)
+  var to = parseKey(toKey)
+  if (!from || !to) return ""
+  var a = MONTHS[from.getMonth()] + " " + from.getDate()
+  if (fromKey === toKey) return a
+  return a + " \u2013 " + MONTHS[to.getMonth()] + " " + to.getDate()
+}
+
+// The retro for one calendar year, or null when there is nothing to show.
+//
+// The year is measured over its "span": from Jan 1, or from the first day ever
+// recorded if tracking began mid-year, to Dec 31 or today. If today has no
+// time yet it is left out, so a quiet morning isn't reported as a break. Days
+// after today never count. Inside the span an active day has time, and every
+// other day is a day off.
+//
+// Streak: most consecutive active days. Break: most consecutive days off,
+// which may run right up to the span's end. The busiest week needs two weeks
+// of span to mean anything. Weekday rhythm averages every day in the span with
+// that weekday, days off included.
+function yearSummary(totals, year, todayKey) {
+  var today = parseKey(todayKey)
+  var first = null
+  for (var k in totals)
+    if (k <= todayKey && (first === null || k < first)) first = k
+  if (!today || first === null) return null
+
+  var firstDate = parseKey(first)
+  var yearStart = new Date(year, 0, 1)
+  var yearEnd = new Date(year, 11, 31)
+  var start = firstDate > yearStart ? firstDate : yearStart
+  var end = yearEnd < today ? yearEnd : today
+  if (year === today.getFullYear() && !(totals[todayKey] > 0)) end = addDays(today, -1)
+  if (end < start) return null
+
+  var months = []
+  for (var m = 0; m < 12; m++) months.push({ month: m, label: MONTHS[m], ms: 0, days: 0, outside: new Date(year, m + 1, 0) < start || new Date(year, m, 1) > end })
+  var wdSum = [0, 0, 0, 0, 0, 0, 0]
+  var wdCount = [0, 0, 0, 0, 0, 0, 0]
+  var weekSums = {}
+  var total = 0
+  var active = 0
+  var spanDays = 0
+  var peak = null
+  var streak = { days: 0 }
+  var gap = { days: 0 }
+  var runA = 0
+  var runAStart = null
+  var runG = 0
+  var runGStart = null
+
+  for (var d = start; d <= end; d = addDays(d, 1)) {
+    var key = dayKey(d)
+    var ms = totals[key] > 0 ? totals[key] : 0
+    var wd = (d.getDay() + 6) % 7
+    spanDays++
+    total += ms
+    months[d.getMonth()].ms += ms
+    wdSum[wd] += ms
+    wdCount[wd]++
+    var monday = dayKey(mondayOf(d))
+    weekSums[monday] = (weekSums[monday] || 0) + ms
+    if (ms > 0) {
+      active++
+      months[d.getMonth()].days++
+      if (peak === null || ms > peak.ms) peak = { key: key, ms: ms }
+      if (runA === 0) runAStart = key
+      runA++
+      if (runA > streak.days) streak = { days: runA, from: runAStart, to: key }
+      runG = 0
+    } else {
+      if (runG === 0) runGStart = key
+      runG++
+      if (runG > gap.days) gap = { days: runG, from: runGStart, to: key }
+      runA = 0
+    }
+  }
+  if (active === 0) return null
+
+  var maxMonth = 0
+  months.forEach(function (x) { maxMonth = Math.max(maxMonth, x.ms) })
+  months.forEach(function (x) { x.rel = maxMonth > 0 ? x.ms / maxMonth : 0 })
+
+  var topMonths = months.filter(function (x) { return x.ms > 0 })
+    .sort(function (a, b) { return b.ms - a.ms || a.month - b.month })
+    .slice(0, 3)
+
+  var busiestWeek = null
+  if (spanDays >= 14)
+    Object.keys(weekSums).sort().forEach(function (mk) {
+      if (busiestWeek === null || weekSums[mk] > busiestWeek.ms)
+        busiestWeek = { key: mk, ms: weekSums[mk], label: weekLabel(parseKey(mk)) }
+    })
+
+  var maxWd = 0
+  var weekdays = wdSum.map(function (sum, i) {
+    var avg = wdCount[i] > 0 ? sum / wdCount[i] : 0
+    maxWd = Math.max(maxWd, avg)
+    return { weekday: WEEKDAYS[(i + 1) % 7], letter: WEEK_LETTERS[i], ms: avg }
+  })
+  weekdays.forEach(function (x) { x.rel = maxWd > 0 ? x.ms / maxWd : 0 })
+
+  return {
+    year: year,
+    total: total,
+    activeDays: active,
+    spanDays: spanDays,
+    averageDay: total / active,
+    months: months,
+    topMonths: topMonths,
+    longestStreak: streak,
+    longestBreak: gap.days > 0 ? gap : null,
+    busiestWeek: busiestWeek,
+    weekdays: weekdays,
+    peakDay: peak
+  }
 }

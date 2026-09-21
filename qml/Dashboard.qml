@@ -4,17 +4,20 @@ import "../js/Model.js" as Model
 import "components"
 
 // Everything inside the popup: the day's total, a donut of its apps with a
-// legend, a week-by-week trend, and a few insights. It knows nothing about
-// the shell (Panel.qml wraps it), so it can be shown with any data.
+// legend, a week-by-week trend, and a few insights, or the yearly overview
+// behind the "Year" link. It knows nothing about the shell (Panel.qml wraps
+// it), so it can be shown with any data.
 //
 // Clicking a bar in the trend inspects that day; clicking it again, or the
-// "Today" link, comes back. Which day and week are on screen is state kept
-// here and cleared by reset().
+// "Today" link, comes back. Which day, week and year are on screen is state
+// kept here and cleared by reset().
 Item {
     id: root
 
     // ---- Inputs ------------------------------------------------------------
     property var days: ({})
+    // Totals of days older than the detailed window, for the yearly view.
+    property var archive: ({})
     property string todayKey: Model.dayKey(new Date())
     property var ignoredApps: []
     property var appNames: ({})
@@ -30,6 +33,8 @@ Item {
     property bool showMore: false
     property bool showShare: false
     property int hoverIndex: -1
+    property string view: "day"       // "day" or "year"
+    property int yearShown: 0         // 0 means the current year
 
     readonly property int weekCap: 52
     readonly property int maxLegendApps: 6
@@ -69,6 +74,13 @@ Item {
         return out;
     }
 
+    // ---- Yearly view -------------------------------------------------------
+    readonly property var totals: active && view === "year" ? Model.dayTotals(days, archive, ignoredApps, appNames) : ({})
+    readonly property var yearList: Model.yearsRange(totals, todayKey)
+    readonly property int currentYear: today.getFullYear()
+    readonly property int year: yearShown > 0 ? yearShown : currentYear
+    readonly property var summary: view === "year" ? Model.yearSummary(totals, year, todayKey) : null
+
     // The slices with their colour attached, for the donut.
     readonly property var coloredSlices: {
         var out = [];
@@ -85,6 +97,23 @@ Item {
         back = 0;
         showMore = false;
         hoverIndex = -1;
+        view = "day";
+        yearShown = 0;
+    }
+
+    function openYear() {
+        yearShown = 0;
+        view = "year";
+    }
+
+    function closeYear() {
+        view = "day";
+    }
+
+    // Older/newer year, kept between the first recorded year and this one.
+    function stepYear(delta) {
+        var oldest = yearList.length > 0 ? yearList[0] : currentYear;
+        yearShown = Math.max(oldest, Math.min(currentYear, year + delta));
     }
 
     function selectDay(key) {
@@ -106,10 +135,27 @@ Item {
     }
 
     implicitWidth: Style.space(460)
-    implicitHeight: column.implicitHeight
+    implicitHeight: view === "year" ? yearView.implicitHeight : column.implicitHeight
+
+    YearView {
+        id: yearView
+        width: parent.width
+        visible: root.view === "year"
+        summary: root.summary
+        year: root.year
+        currentMonth: root.year === root.currentYear ? root.today.getMonth() : -1
+        canOlder: root.yearList.length > 0 && root.year > root.yearList[0]
+        canNewer: root.year < root.currentYear
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        onBackRequested: root.closeYear()
+        onOlderRequested: root.stepYear(-1)
+        onNewerRequested: root.stepYear(1)
+    }
 
     Column {
         id: column
+        visible: root.view === "day"
         width: parent.width
         spacing: Style.space(10)
 
@@ -128,6 +174,11 @@ Item {
                     color: root.foreground
                     font.family: root.fontFamily
                     font.pixelSize: 40
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.openYear()
+                    }
                 }
                 Column {
                     anchors.verticalCenter: parent.verticalCenter
@@ -150,23 +201,45 @@ Item {
                     }
                 }
             }
-            Text {
-                visible: !root.viewingToday
+            Column {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                textFormat: Text.PlainText
-                text: "Back to today"
-                color: todayMouse.containsMouse ? root.foreground : root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                font.underline: todayMouse.containsMouse
-                MouseArea {
-                    id: todayMouse
-                    anchors.fill: parent
-                    anchors.margins: -Style.space(4)
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.reset()
+                spacing: Style.space(6)
+
+                Text {
+                    anchors.right: parent.right
+                    textFormat: Text.PlainText
+                    text: "Year \u203A"
+                    color: yearMouse.containsMouse ? root.foreground : root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.underline: yearMouse.containsMouse
+                    MouseArea {
+                        id: yearMouse
+                        anchors.fill: parent
+                        anchors.margins: -Style.space(4)
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.openYear()
+                    }
+                }
+                Text {
+                    visible: !root.viewingToday
+                    anchors.right: parent.right
+                    textFormat: Text.PlainText
+                    text: "Back to today"
+                    color: todayMouse.containsMouse ? root.foreground : root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.underline: todayMouse.containsMouse
+                    MouseArea {
+                        id: todayMouse
+                        anchors.fill: parent
+                        anchors.margins: -Style.space(4)
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.reset()
+                    }
                 }
             }
         }
@@ -199,7 +272,7 @@ Item {
             }
         }
 
-        PanelRule {
+        Rule {
             foreground: root.foreground
         }
 
@@ -324,7 +397,7 @@ Item {
             }
         }
 
-        PanelRule {
+        Rule {
             foreground: root.foreground
         }
 
@@ -345,7 +418,7 @@ Item {
             onShareToggled: root.showShare = !root.showShare
         }
 
-        PanelRule {
+        Rule {
             foreground: root.foreground
         }
 
@@ -387,12 +460,4 @@ Item {
     }
 
     readonly property int dayAppCount: Object.keys(dayData.apps).length
-
-    // A one-pixel divider tinted from the foreground, like the shell's own.
-    component PanelRule: Rectangle {
-        property color foreground: Color.foreground
-        width: parent ? parent.width : 100
-        height: 1
-        color: Qt.rgba(foreground.r, foreground.g, foreground.b, 0.12)
-    }
 }

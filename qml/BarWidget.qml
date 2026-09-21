@@ -146,6 +146,10 @@ BarWidget {
         function toggle(): void {
             root.togglePanel();
         }
+        function year(): void {
+            if (panelLoader.item)
+                panelLoader.item.showYear();
+        }
         function apps(): string {
             return root.service ? root.service.summary() : "service unavailable";
         }

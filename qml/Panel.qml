@@ -31,6 +31,11 @@ Panel {
     function close() {
         root.controller.hide();
     }
+    // Open the popup straight on the yearly overview.
+    function showYear() {
+        dashboard.openYear();
+        root.open();
+    }
     function toggle() {
         if (root.opened)
             root.close();
@@ -68,13 +73,22 @@ Panel {
 
         // Left/Right move the selected day, Up/Down scroll, [ and ] page
         // through weeks, T returns to today, M shows every app, S flips the
-        // week total between time and share of the week.
+        // week total between time and share of the week, Y opens the yearly
+        // view (where Left/Right and [ ] change the year).
         PanelKeyCatcher {
             id: keyCatcher
             anchors.fill: parent
-            onCloseRequested: root.close()
+            // Esc leaves the yearly view first, then closes the popup.
+            onCloseRequested: {
+                if (dashboard.view === "year")
+                    dashboard.closeYear();
+                else
+                    root.close();
+            }
             onMoveRequested: function (dx, dy) {
-                if (dx !== 0)
+                if (dx !== 0 && dashboard.view === "year")
+                    dashboard.stepYear(dx);
+                else if (dx !== 0)
                     dashboard.stepDay(dx);
                 if (dy !== 0)
                     root.scrollBy(dy * Style.space(60));
@@ -83,10 +97,12 @@ Panel {
                 root.switchPanel(direction);
             }
             onTextKey: function (t) {
-                if (t === "[")
-                    dashboard.pageBy(1);
+                if (t === "y" || t === "Y")
+                    dashboard.view === "year" ? dashboard.closeYear() : dashboard.openYear();
+                else if (t === "[")
+                    dashboard.view === "year" ? dashboard.stepYear(-1) : dashboard.pageBy(1);
                 else if (t === "]")
-                    dashboard.pageBy(-1);
+                    dashboard.view === "year" ? dashboard.stepYear(1) : dashboard.pageBy(-1);
                 else if (t === "t" || t === "T")
                     dashboard.reset();
                 else if (t === "m" || t === "M")
@@ -109,6 +125,7 @@ Panel {
                     width: scroll.width
                     active: root.opened
                     days: root.service ? root.service.days : ({})
+                    archive: root.service ? root.service.archive : ({})
                     todayKey: root.service ? root.service.todayKey : Model.dayKey(new Date())
                     ignoredApps: root.service ? root.service.ignoredApps : []
                     appNames: root.service ? root.service.appNames : ({})
