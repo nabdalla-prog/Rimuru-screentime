@@ -146,6 +146,17 @@ BarWidget {
         function toggle(): void {
             root.togglePanel();
         }
+        // `background off`, `background slime`, or `background /path/to/picture.png`.
+        function background(what: string): void {
+            var value = what.trim();
+            var lower = value.toLowerCase();
+            if (lower === "off" || lower === "slime") {
+                root.setSetting("backgroundMode", lower);
+            } else if (value !== "") {
+                root.setSetting("backgroundImage", value);
+                root.setSetting("backgroundMode", "image");
+            }
+        }
         function settings(): void {
             if (panelLoader.item)
                 panelLoader.item.showSettings();

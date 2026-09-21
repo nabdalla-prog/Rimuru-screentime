@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "rimuru.screentime",
   "name": "Screen Time",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": "nabdalla",
-  "description": "Daily screen time per app in your Omarchy bar: sees what runs inside terminals, names Steam games, folds browsers and web apps. The popup has a donut chart, a 52-week trend, insights, a yearly overview that reaches back to your first day, a daily goal and a settings menu. Fully local: nothing leaves your machine.",
+  "description": "Daily screen time per app in your Omarchy bar: sees what runs inside terminals, names Steam games, folds browsers and web apps. The popup has a donut chart, a 52-week trend, insights, a yearly overview that reaches back to your first day, a daily goal, a settings menu and an optional faint background picture. Fully local: nothing leaves your machine.",
   "kinds": [
     "service",
     "bar-widget"
@@ -61,6 +61,28 @@
         "label": "Custom app names",
         "defaultValue": "",
         "description": "app=Name pairs, comma-separated, e.g. zen=Browser, foot=Terminal."
+      },
+      {
+        "key": "backgroundMode",
+        "type": "enum",
+        "label": "Background picture",
+        "options": [
+          "off",
+          "slime",
+          "image"
+        ],
+        "defaultValue": "slime"
+      },
+      {
+        "key": "backgroundStrength",
+        "type": "enum",
+        "label": "Background strength (1 subtle, 2 medium, 3 strong)",
+        "options": [
+          "1",
+          "2",
+          "3"
+        ],
+        "defaultValue": "1"
       }
     ]
   },

@@ -1,6 +1,6 @@
 # Screen Time for Omarchy
 
-Daily screen time per app, in your Omarchy bar. Click the widget for a popup with a donut chart of the day's apps, a week-by-week trend you can page back through, a few insights, a yearly overview with month-by-month bars and highlights, and a settings menu.
+Daily screen time per app, in your Omarchy bar. Click the widget for a popup with a donut chart of the day's apps, a week-by-week trend you can page back through, a few insights, a yearly overview with month-by-month bars and highlights, and a settings menu, and an optional faint background picture.
 
 Fully local: it reads which window is focused, adds up the time, and saves it to a file on your machine. It makes no network requests.
 
@@ -59,6 +59,7 @@ History is stored at `~/.local/share/omarchy-screentime/history.json`. The last 
 Open the menu with the gear in the popup, the `c` key, or `omarchy-shell rimuru.screentime settings`. Everything is saved in this widget's entry in `~/.config/omarchy/shell.json`.
 
 - **Display:** icon only in the bar, show insights, show the yearly overview, and "playful extras" (the hourglass turns over on the hour).
+- **Background:** a faint picture behind the popup: *Off*, the built-in *Slime*, or *My picture* (see below). *Strength* is Subtle, Medium or Strong, and even Strong stays a watermark.
 - **Trend & history:** how far the weekly graph pages back (12, 24, 36 or 52 weeks), and how much space your history takes.
 - **Daily goal:** off, or 2, 4, 6, 8 or 10 hours. Once today reaches it, a ✓ appears in the bar, the tooltip shows the time left, and the popup shows a progress bar.
 - **Tracking:**
@@ -81,12 +82,32 @@ or written by hand in `shell.json`:
 
 ```json
 { "id": "rimuru.screentime", "dailyGoalHours": 6, "ignoredApps": ["rofi", "wofi"], "appNames": { "zen": "Browser" },
-  "weeks": 24, "iconOnly": false, "showInsights": true, "showYearLink": true, "playful": true }
+  "weeks": 24, "iconOnly": false, "showInsights": true, "showYearLink": true, "playful": true,
+  "backgroundMode": "slime", "backgroundStrength": 1, "backgroundImage": "", "backgroundFit": "fill" }
 ```
 
 Use the name shown in the popup (`Brave`, `Nvim`) or the raw window class (`brave-browser`) for ignoring and renaming; case doesn't matter.
 
-Other commands: `open`, `close`, `toggle`, `year` and `settings`, all bindable to a key, and `status`. There is deliberately no command that wipes history.
+Other commands: `open`, `close`, `toggle`, `year` and `settings`, all bindable to a key, `background off|slime|/path/to/picture.png`, and `status`. There is deliberately no command that wipes history.
+
+## Background picture
+
+By default a small blue slime sits very faintly in the lower-right corner of the popup. It is an original drawing made for this plugin; the plugin does not include artwork from any anime, game or other property.
+
+To use a picture of your own, such as a wallpaper of a character you like, choose *My picture* in the settings and type its path, or run:
+
+```bash
+omarchy-shell rimuru.screentime background ~/Pictures/rimuru.png
+```
+
+- *Fill* covers the whole popup (cropping the picture), and *Fit* shows all of it in the corner, which suits a picture with a transparent background.
+- Formats: png, jpg, webp, gif, bmp and svg. `~`, quotes, `file://` links and spaces in the path all work.
+- The picture is loaded from where it is. It stays on your computer and is never copied into this plugin or uploaded. If it can't be loaded, nothing is drawn and the settings menu says why.
+- The picture sits behind everything and never takes a click. Turn it off any time in the settings, or with `omarchy-shell rimuru.screentime background off`.
+
+## Themes
+
+The plugin follows your Omarchy theme: colours, fonts and the danger colour come from the shell, so switching themes (`omarchy theme set …`) changes the bar widget and popup straight away, light or dark, with no restart.
 
 ## Security
 

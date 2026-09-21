@@ -787,3 +787,70 @@ test("fmtBytes and storageSummary", () => {
   assert.match(text, /^\d+ (B|KB) · 1 day in detail · 2 archived \(totals kept forever\)$/)
   assert.match(M.storageSummary({}, {}), /0 days in detail · 0 archived/)
 })
+
+// ---- Phase 5: background picture ----------------------------------------------
+
+test("parseBackgroundMode falls back to the built-in slime", () => {
+  assert.equal(M.parseBackgroundMode("off"), "off")
+  assert.equal(M.parseBackgroundMode("SLIME"), "slime")
+  assert.equal(M.parseBackgroundMode("image"), "image")
+  assert.equal(M.parseBackgroundMode("nonsense"), "slime")
+  assert.equal(M.parseBackgroundMode(undefined), "slime")
+  assert.equal(M.parseBackgroundMode(null), "slime")
+})
+
+test("strength maps to a subtle opacity and never exceeds the watermark range", () => {
+  assert.equal(M.parseStrength(1), 1)
+  assert.equal(M.parseStrength("3"), 3)
+  assert.equal(M.parseStrength(9), 1)
+  assert.equal(M.parseStrength(0), 1)
+  assert.equal(M.parseStrength("x"), 1)
+  assert.equal(M.backgroundOpacity(1), 0.08)
+  assert.equal(M.backgroundOpacity(2), 0.13)
+  assert.equal(M.backgroundOpacity(3), 0.20)
+  assert.equal(M.backgroundOpacity(undefined), 0.08)
+  // Whatever is stored, the picture stays a faint watermark.
+  for (const n of [1, 2, 3, 99, -5, NaN, "x", null]) assert.ok(M.backgroundOpacity(n) <= 0.20)
+  assert.ok(M.backgroundOpacity(1) < M.backgroundOpacity(2) && M.backgroundOpacity(2) < M.backgroundOpacity(3))
+})
+
+test("parseFit", () => {
+  assert.equal(M.parseFit("fit"), "fit")
+  assert.equal(M.parseFit("FIT"), "fit")
+  assert.equal(M.parseFit("fill"), "fill")
+  assert.equal(M.parseFit("weird"), "fill")
+  assert.equal(M.parseFit(undefined), "fill")
+})
+
+test("cleanImagePath understands what people paste", () => {
+  const home = "/home/user"
+  assert.equal(M.cleanImagePath("/home/user/Pictures/rimuru.png", home), "/home/user/Pictures/rimuru.png")
+  assert.equal(M.cleanImagePath("  /a/b.png  ", home), "/a/b.png")
+  assert.equal(M.cleanImagePath('"/a/my pic.png"', home), "/a/my pic.png")
+  assert.equal(M.cleanImagePath("'/a/my pic.png'", home), "/a/my pic.png")
+  assert.equal(M.cleanImagePath("file:///a/my%20pic.png", home), "/a/my pic.png")
+  assert.equal(M.cleanImagePath("~/Pictures/x.jpg", home), "/home/user/Pictures/x.jpg")
+  assert.equal(M.cleanImagePath("~/Pictures/x.jpg", "/home/user/"), "/home/user/Pictures/x.jpg")
+  assert.equal(M.cleanImagePath("~", home), "/home/user") // a folder, which then fails to load as a picture
+  // Relative paths, blanks and broken links are not usable.
+  assert.equal(M.cleanImagePath("pictures/x.png", home), "")
+  assert.equal(M.cleanImagePath("", home), "")
+  assert.equal(M.cleanImagePath(undefined, home), "")
+  assert.equal(M.cleanImagePath("file:///a/%E0%A4%A.png", home), "")
+  assert.equal(M.cleanImagePath("~/x.png", undefined), "")
+})
+
+test("imageUrl escapes each part of the path", () => {
+  assert.equal(M.imageUrl("/a/b.png"), "file:///a/b.png")
+  assert.equal(M.imageUrl("/a/my pic #1.png"), "file:///a/my%20pic%20%231.png")
+  assert.equal(M.imageUrl("relative.png"), "")
+  assert.equal(M.imageUrl(""), "")
+  assert.equal(M.imageUrl(null), "")
+})
+
+test("isImagePath", () => {
+  for (const ok of ["a.png", "a.PNG", "a.jpg", "a.jpeg", "a.webp", "a.gif", "a.bmp", "a.svg", "/x/y z.JPG"])
+    assert.equal(M.isImagePath(ok), true, ok)
+  for (const bad of ["a.txt", "a", "a.png.exe", "", null, "png"])
+    assert.equal(M.isImagePath(bad), false, String(bad))
+})

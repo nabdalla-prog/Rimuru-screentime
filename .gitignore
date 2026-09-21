@@ -2,4 +2,10 @@
 *.corrupt-*
 node_modules/
 __pycache__/
+# Pictures chosen for the background belong on the user's machine, never in this repo.
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
+/*.gif
 *.pyc

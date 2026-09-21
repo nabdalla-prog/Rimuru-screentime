@@ -3,6 +3,7 @@ import Quickshell
 import qs.Commons
 import qs.Ui
 import "../js/Model.js" as Model
+import "components"
 
 // Popup opened from the bar button. BarWidget.qml owns the button and injects
 // `bar`, `anchorItem` and `hostWidget`; the content is Dashboard.qml, fed from
@@ -124,6 +125,16 @@ Panel {
                     dashboard.showShare = !dashboard.showShare;
             }
 
+            // A faint picture behind everything. It never takes input.
+            BackgroundArt {
+                id: art
+                anchors.fill: parent
+                mode: Model.parseBackgroundMode(root.setting("backgroundMode", "slime"))
+                imagePath: Model.cleanImagePath(root.setting("backgroundImage", ""), Quickshell.env("HOME"))
+                fit: Model.parseFit(root.setting("backgroundFit", "fill"))
+                strength: Model.backgroundOpacity(root.setting("backgroundStrength", 1))
+            }
+
             Flickable {
                 id: scroll
                 anchors.fill: parent
@@ -147,6 +158,11 @@ Panel {
                     showInsights: Model.parseBool(root.setting("showInsights", true), true)
                     showYearLink: Model.parseBool(root.setting("showYearLink", true), true)
                     playful: Model.parseBool(root.setting("playful", true), true)
+                    backgroundMode: art.mode
+                    backgroundImage: String(root.setting("backgroundImage", ""))
+                    backgroundStrength: Model.parseStrength(root.setting("backgroundStrength", 1))
+                    backgroundFit: art.fit
+                    backgroundStatus: art.status
                     weekCap: Model.parseWeeks(root.setting("weeks", 52))
                     danger: root.bar ? root.bar.urgent : Color.urgent
                     foreground: root.contentForeground

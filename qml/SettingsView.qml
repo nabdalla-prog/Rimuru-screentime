@@ -15,6 +15,12 @@ Item {
     property bool showInsights: true
     property bool showYearLink: true
     property bool playful: true
+    // Background picture: what is stored, and whether a chosen file loaded.
+    property string backgroundMode: "slime"
+    property string backgroundImage: ""
+    property int backgroundStrength: 1
+    property string backgroundFit: "fill"
+    property string backgroundStatus: "ok"
     property int weekCap: 52
     property int dailyGoalHours: 0
     property var ignoredApps: []
@@ -28,7 +34,7 @@ Item {
     property string fontFamily: Style.font.family
 
     // True while a text field has focus, so typing isn't taken as shortcuts.
-    readonly property bool editing: ignoreBox.editing || nameApp.editing || nameValue.editing
+    readonly property bool editing: ignoreBox.editing || nameApp.editing || nameValue.editing || backgroundBox.editing
 
     signal settingChanged(string key, var value)
     signal resetTodayRequested
@@ -71,9 +77,27 @@ Item {
         settingChanged("appNames", next);
     }
     function releaseFocus() {
+        backgroundBox.release();
         ignoreBox.release();
         nameApp.release();
         nameValue.release();
+    }
+
+    // Keep the path box in step with what is stored, unless it is being typed in.
+    onBackgroundImageChanged: {
+        if (!backgroundBox.editing)
+            backgroundBox.text = backgroundImage;
+    }
+    Component.onCompleted: backgroundBox.text = backgroundImage
+
+    readonly property string backgroundNote: {
+        if (backgroundStatus === "empty")
+            return "Type the path of a picture and press Enter.";
+        if (backgroundStatus === "error")
+            return "Couldn't load that file. Check the path, and that it is a png, jpg, webp, gif, bmp or svg.";
+        if (backgroundStatus === "loading")
+            return "Loading\u2026";
+        return "Showing your picture.";
     }
 
     implicitHeight: column.implicitHeight
@@ -161,6 +185,121 @@ Item {
                 onToggled: function (v) {
                     root.settingChanged("playful", v);
                 }
+            }
+        }
+
+        // ---- Background ----------------------------------------------------------------
+        Card {
+            title: "BACKGROUND"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+
+            ChoiceRow {
+                label: "Picture behind the popup"
+                options: [
+                    {
+                        "label": "Off",
+                        "value": "off"
+                    },
+                    {
+                        "label": "Slime",
+                        "value": "slime"
+                    },
+                    {
+                        "label": "My picture",
+                        "value": "image"
+                    }
+                ]
+                value: root.backgroundMode
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onChosen: function (v) {
+                    root.settingChanged("backgroundMode", v);
+                }
+            }
+            ChoiceRow {
+                visible: root.backgroundMode !== "off"
+                label: "Strength"
+                options: [
+                    {
+                        "label": "Subtle",
+                        "value": 1
+                    },
+                    {
+                        "label": "Medium",
+                        "value": 2
+                    },
+                    {
+                        "label": "Strong",
+                        "value": 3
+                    }
+                ]
+                value: root.backgroundStrength
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onChosen: function (v) {
+                    root.settingChanged("backgroundStrength", v);
+                }
+            }
+            Column {
+                visible: root.backgroundMode === "image"
+                width: parent.width
+                spacing: Style.space(8)
+
+                Text {
+                    textFormat: Text.PlainText
+                    text: "Path to your picture"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                }
+                TextBox {
+                    id: backgroundBox
+                    width: parent.width
+                    placeholder: "~/Pictures/rimuru.png, then Enter"
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    onSubmitted: function (t) {
+                        root.settingChanged("backgroundImage", t.trim());
+                    }
+                }
+                ChoiceRow {
+                    label: "Picture size"
+                    options: [
+                        {
+                            "label": "Fill",
+                            "value": "fill"
+                        },
+                        {
+                            "label": "Fit",
+                            "value": "fit"
+                        }
+                    ]
+                    value: root.backgroundFit
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    onChosen: function (v) {
+                        root.settingChanged("backgroundFit", v);
+                    }
+                }
+                Text {
+                    width: parent.width
+                    textFormat: Text.PlainText
+                    text: root.backgroundNote
+                    wrapMode: Text.WordWrap
+                    color: root.backgroundStatus === "error" ? root.danger : root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                }
+            }
+            Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                text: "The slime is an original drawing. A picture you choose stays on this computer and is never uploaded."
+                wrapMode: Text.WordWrap
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
             }
         }
 

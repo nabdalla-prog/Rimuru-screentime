@@ -31,6 +31,11 @@ Item {
     property bool showInsights: true
     property bool showYearLink: true
     property bool playful: true
+    property string backgroundMode: "slime"
+    property string backgroundImage: ""
+    property int backgroundStrength: 1
+    property string backgroundFit: "fill"
+    property string backgroundStatus: "ok"
     property int weekCap: 52
     property color danger: Color.urgent
 
@@ -204,6 +209,11 @@ Item {
         showInsights: root.showInsights
         showYearLink: root.showYearLink
         playful: root.playful
+        backgroundMode: root.backgroundMode
+        backgroundImage: root.backgroundImage
+        backgroundStrength: root.backgroundStrength
+        backgroundFit: root.backgroundFit
+        backgroundStatus: root.backgroundStatus
         weekCap: root.weekCap
         dailyGoalHours: root.dailyGoalHours
         ignoredApps: root.ignoredApps

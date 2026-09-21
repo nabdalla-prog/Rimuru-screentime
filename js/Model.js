@@ -11,7 +11,7 @@
 
 var KEEP_DAYS = 365
 // Shown in the settings menu. A test keeps it equal to manifest.json's version.
-var VERSION = "0.5.0"
+var VERSION = "0.6.0"
 
 function pad(n) {
   return n < 10 ? "0" + n : "" + n
@@ -791,4 +791,59 @@ function storageSummary(days, archive) {
   var archived = Object.keys(archive || {}).length
   return fmtBytes(serialize(days || {}, archive || {}).length) + " \u00b7 " + detailed + (detailed === 1 ? " day" : " days")
     + " in detail \u00b7 " + archived + " archived (totals kept forever)"
+}
+
+// ---- Background picture --------------------------------------------------------------
+
+// What sits behind the popup: nothing, the built-in slime drawing, or a picture
+// the user chose.
+var BACKGROUND_MODES = ["off", "slime", "image"]
+function parseBackgroundMode(v) {
+  var m = String(v === undefined || v === null ? "" : v).toLowerCase()
+  return BACKGROUND_MODES.indexOf(m) !== -1 ? m : "slime"
+}
+
+// 1 = subtle, 2 = medium, 3 = strong. Even the strongest stays a watermark.
+function parseStrength(v) {
+  var n = Math.floor(Number(v))
+  return n >= 1 && n <= 3 ? n : 1
+}
+function backgroundOpacity(strength) {
+  return [0.08, 0.13, 0.20][parseStrength(strength) - 1]
+}
+
+// "fill" covers the whole popup (cropping the picture); "fit" shows all of it.
+function parseFit(v) {
+  return String(v === undefined || v === null ? "" : v).toLowerCase() === "fit" ? "fit" : "fill"
+}
+
+// A path as a person types or pastes it: with quotes, as a file:// link, with
+// %20 for spaces, or starting with ~. Returns a plain filesystem path, or ""
+// when nothing usable was given.
+function cleanImagePath(raw, home) {
+  var p = String(raw === undefined || raw === null ? "" : raw).trim()
+  if (p.length >= 2 && (p.charAt(0) === '"' || p.charAt(0) === "'") && p.charAt(p.length - 1) === p.charAt(0))
+    p = p.slice(1, -1).trim()
+  if (/^file:\/\//i.test(p)) {
+    p = p.replace(/^file:\/\//i, "")
+    try { p = decodeURIComponent(p) } catch (e) { return "" }
+  }
+  if (p === "~" || p.indexOf("~/") === 0) {
+    // Without a known home folder there is nothing to expand it to.
+    if (!home) return ""
+    p = String(home).replace(/\/+$/, "") + p.slice(1)
+  }
+  return p.charAt(0) === "/" ? p : ""
+}
+
+// A file:// URL for a filesystem path, with each part escaped so spaces and
+// other odd characters load.
+function imageUrl(path) {
+  if (!path || path.charAt(0) !== "/") return ""
+  return "file://" + path.split("/").map(encodeURIComponent).join("/")
+}
+
+// Only formats the picture loader reads.
+function isImagePath(path) {
+  return /\.(png|jpe?g|webp|bmp|gif|svg)$/i.test(String(path || ""))
 }
