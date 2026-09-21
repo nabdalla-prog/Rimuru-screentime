@@ -30,6 +30,33 @@ Item {
     // what the UI reads from or calls on the service changes.
     readonly property int apiLevel: 4
 
+    // ---- Update notice -----------------------------------------------------
+    // The shell keeps this plugin loaded, so after an update (new files on disk)
+    // it keeps running the old code until the shell restarts. This service
+    // watches its own manifest and reports when the version on disk differs from
+    // the one running, so the bar and popup can ask for a restart.
+    readonly property string manifestPath: {
+        var u = Qt.resolvedUrl("../manifest.json").toString();
+        return u.startsWith("file://") ? u.slice(7) : u;
+    }
+    property string diskVersion: ""
+    readonly property bool updatePending: diskVersion !== "" && diskVersion !== Model.VERSION
+
+    FileView {
+        id: manifestFile
+        path: root.manifestPath
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: {
+            try {
+                root.diskVersion = String(JSON.parse(text()).version || "");
+            } catch (e) {
+                root.diskVersion = "";
+            }
+        }
+    }
+
     readonly property string dataDir: Quickshell.env("HOME") + "/.local/share/omarchy-screentime"
     readonly property string historyPath: dataDir + "/history.json"
     readonly property string resolverPath: {

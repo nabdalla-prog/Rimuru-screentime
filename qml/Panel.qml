@@ -23,7 +23,7 @@ Panel {
 
     readonly property var service: hostWidget ? hostWidget.service : null
     // The running service is older than these files: ask for a restart.
-    readonly property bool serviceStale: hostWidget ? hostWidget.serviceStale === true : false
+    readonly property bool serviceStale: hostWidget ? hostWidget.needsRestart === true : false
 
     readonly property color contentForeground: bar ? bar.foreground : Color.foreground
     readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family

@@ -16,6 +16,9 @@ BarWidget {
     // running an older service than these files (see Service.qml).
     readonly property int requiredApiLevel: 4
     readonly property bool serviceStale: service !== null && service.apiLevel !== requiredApiLevel
+    // New files were installed while this code keeps running.
+    readonly property bool updatePending: service !== null && service.updatePending === true
+    readonly property bool needsRestart: serviceStale || updatePending
 
     // Every read tolerates a service that predates the property.
     readonly property string timeLabel: service && service.label !== undefined ? service.label : ""
@@ -206,7 +209,7 @@ BarWidget {
             var s = root.service;
             var line = "opened=" + root.opened + " label=" + root.label + " service=" + (s ? "ok" : "missing");
             if (s)
-                line += " api=" + s.apiLevel + "/" + root.requiredApiLevel + (root.serviceStale ? " STALE" : "") + " raw=" + s.rawApp + " app=" + s.focusedApp + " tracking=" + s.tracking + " locked=" + s.sessionLocked + " lockSource=" + (s.lockService ? "event" : "poll");
+                line += " api=" + s.apiLevel + "/" + root.requiredApiLevel + (root.serviceStale ? " STALE" : "") + " v=" + Model.VERSION + (root.updatePending ? " UPDATE-ON-DISK=" + root.service.diskVersion : "") + " raw=" + s.rawApp + " app=" + s.focusedApp + " tracking=" + s.tracking + " locked=" + s.sessionLocked + " lockSource=" + (s.lockService ? "event" : "poll");
             console.log("screentime: " + line);
             return line;
         }
@@ -221,7 +224,7 @@ BarWidget {
         hasVisualContent: root.vertical ? root.verticalLines.length > 0 : text !== ""
         fixedHeight: root.vertical ? root.verticalLines.length * Style.bar.iconSlot : -1
         horizontalMargin: 8.5
-        tooltipText: (root.hasActivity ? "Screen time today · " + root.timeLabel : "Screen time · no activity yet") + root.goalTooltip + (root.serviceStale ? " · updated: restart the shell to finish" : "")
+        tooltipText: (root.hasActivity ? "Screen time today · " + root.timeLabel : "Screen time · no activity yet") + root.goalTooltip + (root.needsRestart ? " · updated: restart the shell to finish" : "")
         onPressed: function (b) {
             if (b === Qt.RightButton)
                 root.toggleIconOnly();
