@@ -7,7 +7,10 @@ The compositor reports a terminal as "ghostty" and a Steam game as
 Run with no arguments. It asks Hyprland for the focused window and prints one
 line: the command in the terminal's foreground, or the Steam game's title. It
 prints nothing when there is nothing better than the window class, and the
-caller then falls back to the class. It never writes anything.
+caller then falls back to the class. For a terminal it may print a second line:
+the project that command is working in, which is the name of the nearest folder
+above its working directory that holds a project marker such as `.git` (only
+the folder's name, never its path). It never writes anything.
 
 Terminals: find the ptys under the terminal's process and report the
 foreground process group of the right one, which is the command you would see
@@ -37,6 +40,9 @@ SHELLS = {"bash", "sh", "zsh", "fish", "dash", "nu", "ksh", "tcsh", "csh", "xons
 
 MAX_DEPTH = 6
 MAX_NAME = 64
+
+# A folder holding one of these is a project root.
+PROJECT_MARKERS = (".git", ".hg", "package.json", "pyproject.toml", "Cargo.toml", "go.mod")
 
 STEAM_CLASS = re.compile(r"^steam_app_(.+)$", re.IGNORECASE)
 ACF_NAME = re.compile(r'"name"\s*"([^"]*)"')
@@ -152,6 +158,23 @@ def steam_title(window_class, window_title, roots):
     return None
 
 
+def project_name(cwd, home, exists=os.path.exists):
+    """Name of the project folder containing `cwd`, or None. Looks upward for a
+    marker but stops below `home`, so the home folder itself (which often holds
+    dotfile repos) and anything outside it never count."""
+    if not cwd or not home:
+        return None
+    home = os.path.normpath(home)
+    path = os.path.normpath(cwd)
+    if not path.startswith(home + os.sep):
+        return None
+    while path != home and path.startswith(home + os.sep):
+        if any(exists(os.path.join(path, m)) for m in PROJECT_MARKERS):
+            return clean(os.path.basename(path)) or None
+        path = os.path.dirname(path)
+    return None
+
+
 # ---- /proc and Hyprland ------------------------------------------------------
 
 
@@ -216,8 +239,15 @@ def pty_times(tty_nr):
 
 
 def terminal_command(terminal_pid, window_title, locate=None):
-    """The foreground command in a terminal window, or None. `locate` returns
-    (index, count) for the focused window; it is only called when needed."""
+    """The foreground command in a terminal window, or None."""
+    found = terminal_foreground(terminal_pid, window_title, locate)
+    return found[0] if found else None
+
+
+def terminal_foreground(terminal_pid, window_title, locate=None):
+    """(command name, pid) of the foreground process in a terminal window, or
+    None. `locate` returns (index, count) for the focused window; it is only
+    called when needed."""
     tree = process_tree()
     ptys = {}
     for pid in descendants(tree, terminal_pid):
@@ -234,7 +264,14 @@ def terminal_command(terminal_pid, window_title, locate=None):
             candidates.append((tty, name, created, seen))
     position = locate() if locate and len(candidates) > 1 else None
     chosen = pick_candidate(candidates, window_title, position)
-    return chosen[1] if chosen else None
+    return (chosen[1], ptys[chosen[0]]) if chosen else None
+
+
+def working_dir(pid):
+    try:
+        return os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        return None
 
 
 def active_window():
@@ -278,6 +315,7 @@ def main():
     window_class = str(window.get("class") or "")
     window_title = window.get("title") if isinstance(window.get("title"), str) else ""
 
+    project = None
     if steam_app_key(window_class) is not None:
         name = steam_title(window_class, window_title, steam_roots())
     else:
@@ -291,10 +329,15 @@ def main():
             except (ValueError, OSError, subprocess.SubprocessError):
                 return None
 
-        name = terminal_command(pid, window_title, locate) if pid > 0 else None
+        found = terminal_foreground(pid, window_title, locate) if pid > 0 else None
+        name = found[0] if found else None
+        if found:
+            project = project_name(working_dir(found[1]), os.path.expanduser("~"))
 
     if name:
         print(name)
+        if project:
+            print(project)
 
 
 if __name__ == "__main__":

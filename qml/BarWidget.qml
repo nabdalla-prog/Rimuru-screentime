@@ -14,7 +14,7 @@ BarWidget {
     readonly property var service: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
     // Must match Service.qml's apiLevel. If it doesn't, the shell is still
     // running an older service than these files (see Service.qml).
-    readonly property int requiredApiLevel: 4
+    readonly property int requiredApiLevel: 7
     readonly property bool serviceStale: service !== null && service.apiLevel !== requiredApiLevel
     // New files were installed while this code keeps running.
     readonly property bool updatePending: service !== null && service.updatePending === true
@@ -23,6 +23,12 @@ BarWidget {
     // Every read tolerates a service that predates the property.
     readonly property string timeLabel: service && service.label !== undefined ? service.label : ""
     readonly property bool hasActivity: service && service.hasActivity === true
+    readonly property bool userIdle: service && service.userIdle === true
+    // Apps past their daily limit (empty with an older service).
+    readonly property var overLimits: service && service.overLimits ? service.overLimits : []
+    readonly property string limitTooltip: overLimits.length === 0 ? "" : " · over limit: " + overLimits.map(function (s) {
+        return s.label;
+    }).join(", ")
 
     // Daily goal: a check mark joins the label once today reaches it.
     readonly property var goal: Model.goalProgress(service && service.todayTotal ? service.todayTotal : 0, service ? service.dailyGoalHours : 0)
@@ -179,6 +185,41 @@ BarWidget {
                 return "service unavailable";
             return root.service.summary();
         }
+        // Minutes without input before counting stops: 0 (off), 2, 5, 10 or 15.
+        function idle(minutes: int): void {
+            root.setSetting("idleMinutes", Model.parseIdle(minutes));
+        }
+        // `limit youtube 1h` (or 45m, 1h30); `limit youtube 0` removes it.
+        function limit(app: string, amount: string): void {
+            var limits = Model.parseLimits(root.setting("appLimits", {}));
+            var key = app.trim().toLowerCase();
+            if (key === "")
+                return;
+            var minutes = Model.parseDuration(amount);
+            if (minutes > 0)
+                limits[key] = minutes;
+            else
+                delete limits[key];
+            root.setSetting("appLimits", limits);
+        }
+        function limits(): string {
+            if (!root.service || typeof root.service.limitsSummary !== "function")
+                return "service unavailable";
+            return root.service.limitsSummary();
+        }
+        // Break reminder after this many minutes without a break: 0 (off), 30, 45, 60, 90.
+        function breaks(minutes: int): void {
+            root.setSetting("breakMinutes", Model.parseBreak(minutes));
+        }
+        function projects(): string {
+            var s = root.service;
+            if (!s || !s.today)
+                return "service unavailable";
+            var rows = Model.topProjects(s.today, 100, 1);
+            return rows.length === 0 ? "No project time today" : rows.map(function (r) {
+                return r.name + "  " + Model.fmt(r.ms);
+            }).join("\n");
+        }
         function goal(hours: int): void {
             root.setSetting("dailyGoalHours", Model.parseGoal(hours));
         }
@@ -209,7 +250,7 @@ BarWidget {
             var s = root.service;
             var line = "opened=" + root.opened + " label=" + root.label + " service=" + (s ? "ok" : "missing");
             if (s)
-                line += " api=" + s.apiLevel + "/" + root.requiredApiLevel + (root.serviceStale ? " STALE" : "") + " v=" + Model.VERSION + (root.updatePending ? " UPDATE-ON-DISK=" + root.service.diskVersion : "") + " raw=" + s.rawApp + " app=" + s.focusedApp + " tracking=" + s.tracking + " locked=" + s.sessionLocked + " lockSource=" + (s.lockService ? "event" : "poll");
+                line += " api=" + s.apiLevel + "/" + root.requiredApiLevel + (root.serviceStale ? " STALE" : "") + " v=" + Model.VERSION + (root.updatePending ? " UPDATE-ON-DISK=" + root.service.diskVersion : "") + " raw=" + s.rawApp + " app=" + s.focusedApp + " tracking=" + s.tracking + " locked=" + s.sessionLocked + " idle=" + (s.userIdle === true) + "/" + s.idleMinutes + "m" + " project=" + (s.resolvedProject || "-") + " break=" + Model.fmt(s.breakStreakMs || 0) + "/" + (s.breakMinutes > 0 ? s.breakMinutes + "m" : "off") + " lockSource=" + (s.lockService ? "event" : "poll");
             console.log("screentime: " + line);
             return line;
         }
@@ -224,7 +265,9 @@ BarWidget {
         hasVisualContent: root.vertical ? root.verticalLines.length > 0 : text !== ""
         fixedHeight: root.vertical ? root.verticalLines.length * Style.bar.iconSlot : -1
         horizontalMargin: 8.5
-        tooltipText: (root.hasActivity ? "Screen time today · " + root.timeLabel : "Screen time · no activity yet") + root.goalTooltip + (root.needsRestart ? " · updated: restart the shell to finish" : "")
+        // The urgent colour while an app is over its limit.
+        active: root.overLimits.length > 0
+        tooltipText: (root.hasActivity ? "Screen time today · " + root.timeLabel : "Screen time · no activity yet") + root.goalTooltip + root.limitTooltip + (root.userIdle ? " · paused while you're away" : "") + (root.needsRestart ? " · updated: restart the shell to finish" : "")
         onPressed: function (b) {
             if (b === Qt.RightButton)
                 root.toggleIconOnly();
@@ -240,7 +283,7 @@ BarWidget {
             text: root.glyph
             fontFamily: button.fontFamily
             fontSize: button.fontSize
-            color: button.foreground
+            color: button.active ? button.activeColor : button.foreground
         }
 
         Column {
@@ -257,7 +300,7 @@ BarWidget {
                     text: modelData
                     fontFamily: button.fontFamily
                     fontSize: modelData === root.glyph ? Style.font.icon : (modelData.length > 3 ? button.fontSize * 0.9 : button.fontSize)
-                    color: button.foreground
+                    color: button.active ? button.activeColor : button.foreground
                 }
             }
         }

@@ -4,14 +4,15 @@
 // tested with plain Node (see tests/model.test.js).
 //
 // History shape: `days` is { "<YYYY-MM-DD>": { total: <ms>, apps: { "<appId>": <ms> } } }
-// and covers the last KEEP_DAYS days in full. Older days are rolled into
+// (plus, on days with terminal time in a project folder, `projects: { "<folder>": <ms> }`,
+// which is extra detail and not part of the total) and covers the last KEEP_DAYS days in full. Older days are rolled into
 // `archive`, { "<YYYY-MM-DD>": <total ms> }: the per-app detail is forgotten but
 // each day's total is kept forever, which is what the yearly view reads.
 // All durations are integer milliseconds. Day keys use the local timezone.
 
 var KEEP_DAYS = 365
 // Shown in the settings menu. A test keeps it equal to manifest.json's version.
-var VERSION = "0.6.2"
+var VERSION = "0.7.0"
 
 function pad(n) {
   return n < 10 ? "0" + n : "" + n
@@ -79,6 +80,14 @@ function parseHistory(text) {
       d.apps[app] = Math.round(ms)
       d.total += Math.round(ms)
     }
+    if (entry.projects && typeof entry.projects === "object" && !Array.isArray(entry.projects)) {
+      for (var p in entry.projects) {
+        var pms = entry.projects[p]
+        if (p === "" || !validMs(pms) || pms === 0) continue
+        d.projects = d.projects || {}
+        d.projects[p] = Math.round(pms)
+      }
+    }
     days[key] = d
   }
   return { ok: true, days: days, archive: archive }
@@ -94,13 +103,19 @@ function serialize(days, archive) {
 
 // Returns a new history with `ms` added to `app` on day `key`. The input is
 // never mutated: QML bindings only re-evaluate when the property is replaced.
-function addTime(days, key, app, ms) {
+// `project` (optional) also files the time under that project folder.
+function addTime(days, key, app, ms, project) {
   if (!app || !validMs(ms) || ms === 0) return days
   var next = Object.assign({}, days)
   var prev = days[key] || newDay()
   var apps = Object.assign({}, prev.apps)
   apps[app] = (apps[app] || 0) + ms
   next[key] = { total: prev.total + ms, apps: apps }
+  if (prev.projects || project) {
+    var projects = Object.assign({}, prev.projects)
+    if (project) projects[project] = (projects[project] || 0) + ms
+    next[key].projects = projects
+  }
   return next
 }
 
@@ -231,6 +246,7 @@ function normalizeKeys(days) {
       day.apps[name] = (day.apps[name] || 0) + days[key].apps[app]
       day.total += days[key].apps[app]
     }
+    if (days[key].projects) day.projects = days[key].projects
     out[key] = day
   }
   return out
@@ -290,6 +306,59 @@ function parseWeeks(v) {
   return WEEK_CHOICES.indexOf(n) !== -1 ? n : 52
 }
 
+// Minutes without keyboard or mouse input after which counting stops, 0 = off.
+var IDLE_CHOICES = [0, 2, 5, 10, 15]
+var IDLE_DEFAULT = 5
+function parseIdle(v) {
+  if (v === undefined || v === null || v === "") return IDLE_DEFAULT
+  var n = Math.floor(Number(v))
+  return IDLE_CHOICES.indexOf(n) !== -1 ? n : IDLE_DEFAULT
+}
+
+// What was counted in the last `keepMs`, so it can be taken back once it turns
+// out the user had already walked away. Entries are { key, app, project, start,
+// end } (epoch ms; project "" = none); a stretch continuing the last entry
+// extends it, so the list stays a few entries long. Returns a new list.
+function logRecent(log, key, app, start, end, keepMs, project) {
+  project = project || ""
+  var out = []
+  for (var i = 0; i < log.length; i++)
+    if (log[i].end > end - keepMs) out.push(log[i])
+  var last = out.length > 0 ? out[out.length - 1] : null
+  if (last && last.key === key && last.app === app && (last.project || "") === project && last.end === start)
+    out[out.length - 1] = { key: key, app: app, project: project, start: last.start, end: end }
+  else if (end > start)
+    out.push({ key: key, app: app, project: project, start: start, end: end })
+  return out
+}
+
+// Removes from `days` the part of each logged stretch that falls after `since`
+// (never below zero; an app left with no time is dropped). Returns new days.
+function takeBack(days, log, since) {
+  var next = days
+  for (var i = 0; i < log.length; i++) {
+    var e = log[i]
+    var ms = e.end - Math.max(e.start, since)
+    var day = next[e.key]
+    if (ms <= 0 || !day || !day.apps[e.app]) continue
+    var apps = Object.assign({}, day.apps)
+    var cut = Math.min(ms, apps[e.app])
+    apps[e.app] -= cut
+    if (apps[e.app] <= 0) delete apps[e.app]
+    next = Object.assign({}, next)
+    next[e.key] = { total: Math.max(0, day.total - cut), apps: apps }
+    if (day.projects) {
+      var projects = Object.assign({}, day.projects)
+      if (e.project && projects[e.project]) {
+        projects[e.project] -= Math.min(cut, projects[e.project])
+        if (projects[e.project] <= 0) delete projects[e.project]
+      }
+      next[e.key].projects = projects
+    }
+  }
+  return next
+}
+
 // A yes/no setting that may have been written by hand as true, "true", 1...
 function parseBool(v, fallback) {
   if (v === true || v === "true" || v === 1 || v === "1") return true
@@ -326,7 +395,137 @@ function visibleDay(day, list, names) {
     out.apps[app] = day.apps[app]
     out.total += day.apps[app]
   }
+  if (day.projects) out.projects = day.projects
   return out
+}
+
+// Project folders worked in from the terminal that day, most time first, each
+// with at least `minMs` (a minute by default): [{ name, ms }].
+function topProjects(day, limit, minMs) {
+  var floor = minMs === undefined ? 60000 : minMs
+  var src = day && day.projects ? day.projects : {}
+  var rows = []
+  for (var p in src)
+    if (src[p] >= floor) rows.push({ name: p, ms: src[p] })
+  rows.sort(function (a, b) { return b.ms - a.ms || (a.name < b.name ? -1 : 1) })
+  return rows.slice(0, limit)
+}
+
+// ---- Breaks ----------------------------------------------------------------
+
+// Minutes of screen time without a break before a reminder, 0 = off (default).
+var BREAK_CHOICES = [0, 30, 45, 60, 90]
+function parseBreak(v) {
+  var n = Math.floor(Number(v))
+  return BREAK_CHOICES.indexOf(n) !== -1 ? n : 0
+}
+// Being away this long (idle, locked, asleep, nothing focused) is a break.
+var BREAK_RESET_MS = 2 * 60000
+
+// Break state: { streakMs, pausedAt, reminded } where streakMs is screen time
+// since the last break, pausedAt when counting last stopped (0 = counting) and
+// reminded how many reminders this streak has had.
+function newBreakState() {
+  return { streakMs: 0, pausedAt: 0, reminded: 0 }
+}
+
+// Counting stopped at `at` (the earliest moment wins).
+function breakPause(state, at) {
+  if (state.pausedAt > 0 && state.pausedAt <= at) return state
+  return { streakMs: state.streakMs, pausedAt: at, reminded: state.reminded }
+}
+
+// `ms` of screen time ending at `now`. After a long enough pause the streak
+// starts over. Returns { state, remind } where remind is true once per full
+// `minutes` of the streak (at 60, 120... for 60).
+function breakAdvance(state, now, ms, minutes) {
+  var s = state
+  if (s.pausedAt > 0 && now - ms - s.pausedAt >= BREAK_RESET_MS) s = newBreakState()
+  s = { streakMs: s.streakMs + ms, pausedAt: 0, reminded: s.reminded }
+  var remind = false
+  if (minutes > 0) {
+    var due = Math.floor(s.streakMs / (minutes * 60000))
+    if (due > s.reminded) {
+      s.reminded = due
+      remind = true
+    }
+  }
+  return { state: s, remind: remind }
+}
+
+// ---- App limits ------------------------------------------------------------
+
+// A duration typed by hand, in whole minutes: 45, "45m", "1h", "1h30", "1h 30m",
+// "1.5h", "90min". 0 means none (or unreadable); capped at a day.
+function parseDuration(v) {
+  if (typeof v === "number") return isFinite(v) && v > 0 ? Math.min(1440, Math.round(v)) : 0
+  var s = String(v === undefined || v === null ? "" : v).trim().toLowerCase().replace(/\s+/g, "")
+  var m = /^(?:(\d+(?:\.\d+)?)h)?(?:(\d+)(?:m|min|mins)?)?$/.exec(s)
+  if (!m || s === "") return 0
+  var total = (m[1] ? Number(m[1]) * 60 : 0) + (m[2] ? Number(m[2]) : 0)
+  return total > 0 ? Math.min(1440, Math.round(total)) : 0
+}
+
+// Daily limits: { "youtube": 60 } (name -> minutes). An object, or a
+// comma/newline separated string of name=duration pairs. Names are matched like
+// ignored apps (key, readable or custom name, any case).
+function parseLimits(v) {
+  var out = {}
+  function put(k, d) {
+    k = String(k).trim().toLowerCase()
+    var min = parseDuration(d)
+    if (k !== "" && min > 0) out[k] = min
+  }
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    for (var k in v) put(k, v[k])
+  } else {
+    splitEntries(v).forEach(function (pair) {
+      var i = pair.indexOf("=")
+      if (i > 0) put(pair.slice(0, i), pair.slice(i + 1))
+    })
+  }
+  return out
+}
+
+// How each limited app is doing today, most used share first:
+// [{ name, label, limitMs, usedMs, leftMs, ratio, over }]. Every app matching a
+// limit's name counts towards it (several apps can share a custom name).
+function limitStatus(day, limits, names) {
+  var out = []
+  var apps = day && day.apps ? day.apps : {}
+  for (var name in limits || {}) {
+    var used = 0
+    var best = null
+    for (var app in apps) {
+      if (!isIgnored([name], names, app, app)) continue
+      used += apps[app]
+      if (best === null || apps[app] > apps[best]) best = app
+    }
+    var limitMs = limits[name] * 60000
+    out.push({
+      name: name,
+      label: best !== null ? displayLabel(best, names) : displayLabel(name, names),
+      limitMs: limitMs,
+      usedMs: used,
+      leftMs: Math.max(0, limitMs - used),
+      ratio: Math.min(1, used / limitMs),
+      over: used >= limitMs
+    })
+  }
+  out.sort(function (a, b) { return b.ratio - a.ratio || (a.name < b.name ? -1 : 1) })
+  return out
+}
+
+// The app a "set a daily limit" tip suggests: today's most used one, once it
+// has at least `minMs`, and only while no limit exists and the tip wasn't
+// dismissed. Returns { key, name, ms } (key = what the limit is stored under)
+// or null.
+var LIMIT_TIP_MIN_MS = 15 * 60000
+function limitTip(day, limits, names, dismissed, minMs) {
+  if (dismissed || Object.keys(limits || {}).length > 0) return null
+  var top = topApps(day, 1000, names)[0]
+  if (!top || top.ms < (minMs === undefined ? LIMIT_TIP_MIN_MS : minMs)) return null
+  return { key: top.name.toLowerCase(), name: top.name, ms: top.ms }
 }
 
 function goalProgress(totalMs, hours) {

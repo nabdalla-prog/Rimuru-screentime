@@ -2,6 +2,15 @@
 
 All notable changes to this plugin. Versions follow `manifest.json`; each is a tagged release on GitHub.
 
+## [0.7.0] - 2026-10-04
+
+### Added
+- Idle detection: after a few minutes without keyboard or mouse input (5 by default; 2, 10, 15 or off in Settings > Tracking, or `omarchy-shell rimuru.screentime idle N`) counting pauses, and the minutes spent waiting for it are taken back. Apps that keep the screen awake, such as a playing video, still count. The bar tooltip says when tracking is paused, and `status` shows `idle=`.
+- Daily app limits: give an app a time budget (Settings > Tracking > Daily limits, or `omarchy-shell rimuru.screentime limit <app> 1h`). Reaching it sends one desktop notification that day, turns the bar icon the theme's urgent colour, and the popup shows every limit with the time left. `omarchy-shell rimuru.screentime limits` lists them.
+- Break reminder (off by default): a gentle notification after 30, 45, 60 or 90 minutes of screen time without a break, set in Settings > Breaks or with `omarchy-shell rimuru.screentime breaks 60`. Two minutes away counts as a break.
+- Projects in the terminal: terminal time is also filed under the project folder it happens in (the nearest folder with `.git`, `package.json`, `pyproject.toml` and similar), and the popup lists the day's top projects when there are any. Only folder names are stored. Can be turned off in Settings > Tracking; `omarchy-shell rimuru.screentime projects` lists today's.
+- A tip in the popup that offers a one-tap daily limit for today's most used app, so the feature can be found without opening the settings. It disappears once a limit exists, or for good with its ×.
+
 ## [0.6.2] - 2026-09-20
 
 ### Fixed

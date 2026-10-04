@@ -37,6 +37,15 @@ Item {
     property string backgroundFit: "fill"
     property string backgroundStatus: "ok"
     property int weekCap: 52
+    property int idleMinutes: Model.IDLE_DEFAULT
+    // Daily limits per app, { name: minutes }.
+    property var appLimits: ({})
+    // Show the terminal projects list (Settings > Tracking).
+    property bool trackProjects: true
+    // Minutes of screen time before a break reminder, 0 = off.
+    property int breakMinutes: 0
+    // The "set a daily limit" tip was closed for good.
+    property bool limitTipDismissed: false
     property color danger: Color.urgent
     // The shell is still running an older service than these files.
     property bool stale: false
@@ -78,6 +87,17 @@ Item {
     readonly property var page: active ? Model.weekPage(days, today, shownBack, ignoredApps, appNames) : ({ label: "", total: 0, share: 0, days: [] })
     readonly property var insights: active ? Model.dayInsights(days, activeKey, todayKey, page, ignoredApps, appNames) : []
     readonly property var goal: Model.goalProgress(dayData.total, dailyGoalHours)
+    // Project folders worked in from the terminal on the shown day.
+    readonly property var projects: active && trackProjects ? Model.topProjects(dayData, 4) : []
+    readonly property var limits: viewingToday ? Model.limitStatus(dayData, appLimits, appNames) : []
+    // Offers a one-tap limit for today's top app, so the feature is found.
+    readonly property var limitTip: viewingToday && !fresh ? Model.limitTip(dayData, appLimits, appNames, limitTipDismissed) : null
+
+    function setLimit(key, minutes) {
+        var next = Object.assign({}, appLimits);
+        next[key] = minutes;
+        settingChanged("appLimits", next);
+    }
     readonly property bool hasOther: slices.length > 0 && slices[slices.length - 1].other === true
     readonly property int headCount: hasOther ? slices.length - 1 : slices.length
 
@@ -218,6 +238,10 @@ Item {
         backgroundStatus: root.backgroundStatus
         weekCap: root.weekCap
         dailyGoalHours: root.dailyGoalHours
+        idleMinutes: root.idleMinutes
+        appLimits: root.appLimits
+        trackProjects: root.trackProjects
+        breakMinutes: root.breakMinutes
         ignoredApps: root.ignoredApps
         appNames: root.appNames
         todayApps: root.todayApps
@@ -459,6 +483,140 @@ Item {
             }
         }
 
+        // ---- App limits (today only) -------------------------------------------
+        Column {
+            visible: root.limits.length > 0
+            width: parent.width
+            spacing: Style.space(6)
+
+            Repeater {
+                model: root.limits
+
+                Column {
+                    id: limitRow
+                    required property var modelData
+                    readonly property color tint: modelData.over ? root.danger : root.foreground
+                    width: parent.width
+                    spacing: Style.space(3)
+
+                    Item {
+                        width: parent.width
+                        height: limitName.implicitHeight
+
+                        Text {
+                            id: limitName
+                            anchors.left: parent.left
+                            anchors.right: limitUsed.left
+                            anchors.rightMargin: Style.space(8)
+                            textFormat: Text.PlainText
+                            text: limitRow.modelData.label
+                            elide: Text.ElideRight
+                            color: limitRow.tint
+                            font.family: root.fontFamily
+                            font.pixelSize: Style.font.caption
+                        }
+                        Text {
+                            id: limitUsed
+                            anchors.right: parent.right
+                            textFormat: Text.PlainText
+                            text: limitRow.modelData.over ? "limit reached · " + Model.fmt(limitRow.modelData.usedMs) + " / " + Model.fmt(limitRow.modelData.limitMs) : Model.fmt(limitRow.modelData.leftMs) + " left of " + Model.fmt(limitRow.modelData.limitMs)
+                            color: limitRow.modelData.over ? root.danger : root.dim
+                            font.family: root.fontFamily
+                            font.pixelSize: Style.font.caption
+                        }
+                    }
+                    Rectangle {
+                        width: parent.width
+                        height: Style.space(4)
+                        radius: height / 2
+                        color: Qt.rgba(limitRow.tint.r, limitRow.tint.g, limitRow.tint.b, 0.14)
+
+                        Rectangle {
+                            width: Math.max(parent.height, parent.width * limitRow.modelData.ratio)
+                            height: parent.height
+                            radius: height / 2
+                            color: limitRow.tint
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- Tip: daily limits (until one is set or the tip is closed) ------------
+        Card {
+            visible: root.limitTip !== null
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+
+            Item {
+                width: parent.width
+                height: tipTitle.implicitHeight
+
+                Text {
+                    id: tipTitle
+                    anchors.left: parent.left
+                    anchors.right: tipClose.left
+                    anchors.rightMargin: Style.space(8)
+                    textFormat: Text.PlainText
+                    text: root.limitTip ? "Tip: give " + root.limitTip.name + " a daily limit" : ""
+                    elide: Text.ElideRight
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                }
+                Text {
+                    id: tipClose
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: "×"
+                    color: tipCloseMouse.containsMouse ? root.foreground : root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+
+                    MouseArea {
+                        id: tipCloseMouse
+                        anchors.fill: parent
+                        anchors.margins: -Style.space(6)
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.settingChanged("limitTipDismissed", true)
+                    }
+                }
+            }
+            Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                text: "You get a notification when it's reached. Other apps: More."
+                wrapMode: Text.WordWrap
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+            }
+            Flow {
+                width: parent.width
+                spacing: Style.space(6)
+
+                Repeater {
+                    model: [30, 60, 120]
+
+                    Chip {
+                        required property int modelData
+                        foreground: root.foreground
+                        fontFamily: root.fontFamily
+                        text: Model.fmt(modelData * 60000)
+                        onClicked: if (root.limitTip) root.setLimit(root.limitTip.key, modelData)
+                    }
+                }
+                Chip {
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    text: "More…"
+                    onClicked: root.openSettings()
+                }
+            }
+        }
+
         Rule {
             foreground: root.foreground
         }
@@ -587,6 +745,73 @@ Item {
                                 root.hoverIndex = sliceIndex;
                             else if (root.hoverIndex === sliceIndex)
                                 root.hoverIndex = -1;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- Projects: terminal time per project folder (hidden when none) -------
+        Rule {
+            visible: root.projects.length > 0
+            foreground: root.foreground
+        }
+        Column {
+            visible: root.projects.length > 0
+            width: parent.width
+            spacing: Style.space(6)
+
+            SectionLabel {
+                text: "PROJECTS"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+            }
+            Repeater {
+                model: root.projects
+
+                Column {
+                    id: projectRow
+                    required property var modelData
+                    width: parent.width
+                    spacing: Style.space(3)
+
+                    Item {
+                        width: parent.width
+                        height: projectName.implicitHeight
+
+                        Text {
+                            id: projectName
+                            anchors.left: parent.left
+                            anchors.right: projectTime.left
+                            anchors.rightMargin: Style.space(8)
+                            textFormat: Text.PlainText
+                            text: projectRow.modelData.name
+                            elide: Text.ElideRight
+                            color: root.foreground
+                            font.family: root.fontFamily
+                            font.pixelSize: Style.font.caption
+                        }
+                        Text {
+                            id: projectTime
+                            anchors.right: parent.right
+                            textFormat: Text.PlainText
+                            text: Model.fmt(projectRow.modelData.ms)
+                            color: root.dim
+                            font.family: root.fontFamily
+                            font.pixelSize: Style.font.caption
+                        }
+                    }
+                    Rectangle {
+                        width: parent.width
+                        height: Style.space(4)
+                        radius: height / 2
+                        color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.14)
+
+                        Rectangle {
+                            width: Math.max(parent.height, parent.width * projectRow.modelData.ms / root.projects[0].ms)
+                            height: parent.height
+                            radius: height / 2
+                            color: root.foreground
                         }
                     }
                 }

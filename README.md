@@ -82,6 +82,7 @@ That removes the plugin and its bar entry. Your history stays in `~/.local/share
 - **Steam games** show their title instead of `steam_app_730`. Non-Steam shortcuts such as Battle.net use the window title.
 - **Browsers** are folded to one name (`brave-browser` and `brave` are both "Brave"), and **Chromium web apps** ("install as app") are filed under their site, the same across profiles.
 - Nothing is counted while the session is locked, while the screensaver or a desktop portal dialog has focus, when no window has focus, for apps you ignore, or while the machine is asleep. Time that crosses midnight is split between the two days.
+- **Idle:** after 5 minutes without keyboard or mouse input (adjustable, or off) counting stops until you're back, and those 5 waiting minutes are taken back too, since nobody was there. Apps that keep the screen awake, like a playing video or a call, hold this off, so watching something still counts.
 
 History is stored at `~/.local/share/omarchy-screentime/history.json`. The last 365 days are kept in full (time per app). Older days are rolled into an archive that keeps just each day's total, forever, so the yearly overview can always go back to your first day. Only the per-app breakdown of old days is forgotten. Ignoring an app hides its time on recent days but can't be applied to archived days, which are totals only. Delete the file to reset. If the file ever becomes unreadable, a copy is kept next to it as `history.json.corrupt-<timestamp>` and tracking starts fresh.
 
@@ -92,16 +93,26 @@ Open the menu with the gear in the popup, the `c` key, or `omarchy-shell rimuru.
 - **Display:** icon only in the bar, show insights, show the yearly overview, and "playful extras" (the hourglass turns over on the hour).
 - **Background:** a faint picture behind the popup: *Off*, the built-in *Slime*, or *My picture* (see below). *Strength* is Subtle, Medium or Strong, and even Strong stays a watermark.
 - **Trend & history:** how far the weekly graph pages back (12, 24, 36 or 52 weeks), and how much space your history takes.
+- **Breaks:** off (the default), or a reminder after 30, 45, 60 or 90 minutes of screen time in a row. It is one gentle desktop notification (and another each time the same stretch runs that long again). Being away for two minutes (idle, locked, asleep, or no window focused) counts as a break and starts the clock over.
 - **Daily goal:** off, or 2, 4, 6, 8 or 10 hours. Once today reaches it, a ✓ appears in the bar, the tooltip shows the time left, and the popup shows a progress bar.
 - **Tracking:**
+  - *Stop counting after no input for* Off, 2, 5 (default), 10 or 15 minutes. See "Idle" above.
+  - *Projects in the terminal* (on by default): time in a terminal is also filed under the project folder the command is working in, and the popup lists the day's top projects (shown only when there are some). A project is the nearest folder above the working directory, inside your home folder, that holds `.git`, `.hg`, `package.json`, `pyproject.toml`, `Cargo.toml` or `go.mod`. Only the folder's name is stored, never its path.
   - *Ignored apps* are never counted and their past time is hidden. The apps you've used today are listed as chips: tap one to ignore it, or type a name and press Enter.
   - *Custom names* rename an app in the popup. Apps given the same name are merged into one row.
+  - *Daily limits* give an app a time budget for the day (type the app and a time such as `1h`, `45m` or `1h30`, then Add). When it is reached you get one desktop notification, the bar turns the theme's urgent colour, and the popup lists each limit with the time left. Names match like ignored apps, so a custom name covers every app that shares it. Until you set one, the popup shows a small tip offering a one-tap limit (30m, 1h, 2h) for today's most used app once it has 15 minutes; the × hides it for good.
 - **Danger zone:** *Reset today* (three clicks: RESET, SURE?, REALLY?) clears only today. *Wipe all history* (four clicks) erases every day including the archive, with no undo. Waiting a few seconds or moving off the button starts over.
 
 The same settings can be changed from the terminal:
 
 ```bash
 omarchy-shell rimuru.screentime goal 6              # daily goal in hours, 0 = off
+omarchy-shell rimuru.screentime idle 10             # stop counting after 10 minutes without input, 0 = off
+omarchy-shell rimuru.screentime limit youtube.com 1h  # daily limit for an app (45m, 1h30 ...)
+omarchy-shell rimuru.screentime limit youtube.com 0   # remove it
+omarchy-shell rimuru.screentime limits              # today's limits and how much is used
+omarchy-shell rimuru.screentime breaks 60           # break reminder after 60 minutes, 0 = off
+omarchy-shell rimuru.screentime projects            # today's time per terminal project
 omarchy-shell rimuru.screentime ignore rofi         # never count this app
 omarchy-shell rimuru.screentime unignore rofi
 omarchy-shell rimuru.screentime rename zen Browser  # show an app under your own name
@@ -144,7 +155,7 @@ The plugin follows your Omarchy theme: colours, fonts and the danger colour come
 
 Nothing leaves your computer: there is no network code, no account and no telemetry. History and settings are plain files you can read and delete.
 
-Omarchy plugins run inside the shell with your user's permissions and are not sandboxed, so read the code before you install any of them. This one is small: `js/Model.js` (pure logic), `qml/Service.qml` (tracking and saving), `qml/BarWidget.qml`, `qml/Panel.qml`, `qml/Dashboard.qml`, `qml/YearView.qml`, `qml/SettingsView.qml` and `qml/components/` (UI) and `python/resolve_app.py` (looks up the terminal command or Steam title; it only reads `/proc`, `hyprctl activewindow` and Steam's `appmanifest` files, and writes nothing). The other commands it runs are `mkdir -p` and `cp` on its own data folder, and `omarchy-shell lock isLocked` to see whether the screen is locked. It only ever writes to its own data folder and to its own entry in `~/.config/omarchy/shell.json`, and only when you change a setting. To report a security problem see [SECURITY.md](SECURITY.md).
+Omarchy plugins run inside the shell with your user's permissions and are not sandboxed, so read the code before you install any of them. This one is small: `js/Model.js` (pure logic), `qml/Service.qml` (tracking and saving), `qml/BarWidget.qml`, `qml/Panel.qml`, `qml/Dashboard.qml`, `qml/YearView.qml`, `qml/SettingsView.qml` and `qml/components/` (UI) and `python/resolve_app.py` (looks up the terminal command or Steam title; it only reads `/proc`, `hyprctl activewindow` and Steam's `appmanifest` files, and writes nothing). The other commands it runs are `mkdir -p` and `cp` on its own data folder, `omarchy-shell lock isLocked` to see whether the screen is locked, and `notify-send` when an app reaches a daily limit you set or a break reminder is due. To find a terminal's project it reads the working directory of the terminal's foreground process (`/proc/<pid>/cwd`) and checks whether marker files exist above it; only the project folder's name is saved. It only ever writes to its own data folder and to its own entry in `~/.config/omarchy/shell.json`, and only when you change a setting. To report a security problem see [SECURITY.md](SECURITY.md).
 
 ## Troubleshooting
 
@@ -158,7 +169,8 @@ Start with `omarchy-shell rimuru.screentime status`. It prints one line: whether
 | Terminals show as `Ghostty` / `foot` instead of `nvim` | `python3 --version` must work, and `hyprctl activewindow -j` must print JSON. |
 | The icon shows as an empty box | Install a Nerd Font (Omarchy's default already includes it). |
 | A Steam game shows as `steam_app_730` | Steam's `appmanifest_*.acf` file for it wasn't found in the usual library folders. |
-| Time isn't counted while I'm away | That is intended: the timer pauses while the session is locked or the screensaver is on. |
+| Time isn't counted while I'm away | That is intended: the timer pauses while the session is locked, the screensaver is on, or there has been no input for the idle time (the bar tooltip then says "paused while you're away"). |
+| Reading without scrolling isn't counted | Raise the idle time in the settings (Tracking), or turn it off. |
 | Something else | Look for lines from the plugin: `journalctl --user --since '-10min' \| grep -i screentime`, then [open an issue](https://github.com/nabdalla-prog/Rimuru-screentime/issues/new/choose). |
 
 ## Known limitations

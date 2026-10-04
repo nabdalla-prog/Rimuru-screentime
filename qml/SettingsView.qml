@@ -23,6 +23,10 @@ Item {
     property string backgroundStatus: "ok"
     property int weekCap: 52
     property int dailyGoalHours: 0
+    property int idleMinutes: Model.IDLE_DEFAULT
+    property var appLimits: ({})
+    property bool trackProjects: true
+    property int breakMinutes: 0
     property var ignoredApps: []
     property var appNames: ({})
     // Names of today's apps, offered as one-tap suggestions to ignore.
@@ -34,7 +38,7 @@ Item {
     property string fontFamily: Style.font.family
 
     // True while a text field has focus, so typing isn't taken as shortcuts.
-    readonly property bool editing: ignoreBox.editing || nameApp.editing || nameValue.editing || backgroundBox.editing
+    readonly property bool editing: ignoreBox.editing || nameApp.editing || nameValue.editing || limitApp.editing || limitTime.editing || backgroundBox.editing
 
     signal settingChanged(string key, var value)
     signal resetTodayRequested
@@ -42,6 +46,12 @@ Item {
     signal backRequested
 
     readonly property color dim: Qt.darker(foreground, 1.5)
+    readonly property var limitEntries: Object.keys(appLimits).map(function (k) {
+        return {
+            "key": k,
+            "ms": appLimits[k] * 60000
+        };
+    })
     readonly property var nameEntries: Object.keys(appNames).map(function (k) {
         return {
             "key": k,
@@ -76,11 +86,29 @@ Item {
         delete next[key];
         settingChanged("appNames", next);
     }
+    function addLimit() {
+        var key = limitApp.text.trim().toLowerCase();
+        var minutes = Model.parseDuration(limitTime.text);
+        if (key === "" || minutes === 0)
+            return;
+        var next = Object.assign({}, appLimits);
+        next[key] = minutes;
+        settingChanged("appLimits", next);
+        limitApp.clear();
+        limitTime.clear();
+    }
+    function removeLimit(key) {
+        var next = Object.assign({}, appLimits);
+        delete next[key];
+        settingChanged("appLimits", next);
+    }
     function releaseFocus() {
         backgroundBox.release();
         ignoreBox.release();
         nameApp.release();
         nameValue.release();
+        limitApp.release();
+        limitTime.release();
     }
 
     // Keep the path box in step with what is stored, unless it is being typed in.
@@ -390,11 +418,115 @@ Item {
             }
         }
 
+        // ---- Breaks ----------------------------------------------------------------------
+        Card {
+            title: "BREAKS"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+
+            ChoiceRow {
+                label: "Remind me to rest my eyes after"
+                options: [
+                    {
+                        "label": "Off",
+                        "value": 0
+                    },
+                    {
+                        "label": "30m",
+                        "value": 30
+                    },
+                    {
+                        "label": "45m",
+                        "value": 45
+                    },
+                    {
+                        "label": "1h",
+                        "value": 60
+                    },
+                    {
+                        "label": "1h 30m",
+                        "value": 90
+                    }
+                ]
+                value: root.breakMinutes
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onChosen: function (v) {
+                    root.settingChanged("breakMinutes", v);
+                }
+            }
+            Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                text: "A gentle notification after that much screen time in a row. Two minutes away from the computer counts as a break."
+                wrapMode: Text.WordWrap
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+            }
+        }
+
         // ---- Tracking ---------------------------------------------------------------------
         Card {
             title: "TRACKING"
             foreground: root.foreground
             fontFamily: root.fontFamily
+
+            ChoiceRow {
+                label: "Pause after no keyboard or mouse input for"
+                options: [
+                    {
+                        "label": "Off",
+                        "value": 0
+                    },
+                    {
+                        "label": "2m",
+                        "value": 2
+                    },
+                    {
+                        "label": "5m",
+                        "value": 5
+                    },
+                    {
+                        "label": "10m",
+                        "value": 10
+                    },
+                    {
+                        "label": "15m",
+                        "value": 15
+                    }
+                ]
+                value: root.idleMinutes
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onChosen: function (v) {
+                    root.settingChanged("idleMinutes", v);
+                }
+            }
+            Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                text: "The wait itself isn't counted either. A playing video or a call keeps counting."
+                wrapMode: Text.WordWrap
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+            }
+
+            ToggleRow {
+                label: "Projects in the terminal"
+                detail: "Time per project folder (only its name is stored)"
+                checked: root.trackProjects
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onToggled: function (v) {
+                    root.settingChanged("trackProjects", v);
+                }
+            }
+
+            Rule {
+                foreground: root.foreground
+            }
 
             Text {
                 textFormat: Text.PlainText
@@ -538,6 +670,74 @@ Item {
                     anchors.verticalCenter: nameApp.verticalCenter
                     text: "Add"
                     onClicked: root.addName()
+                }
+            }
+
+            Rule {
+                foreground: root.foreground
+            }
+
+            Text {
+                textFormat: Text.PlainText
+                text: "Daily limits"
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+            }
+            Flow {
+                width: parent.width
+                spacing: Style.space(6)
+
+                Text {
+                    visible: root.limitEntries.length === 0
+                    textFormat: Text.PlainText
+                    text: "None. You get a notification when an app reaches its limit, and the bar icon changes colour."
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                }
+                Repeater {
+                    model: root.limitEntries
+
+                    Chip {
+                        required property var modelData
+                        foreground: root.foreground
+                        fontFamily: root.fontFamily
+                        text: modelData.key + " · " + Model.fmt(modelData.ms)
+                        removable: true
+                        onClicked: root.removeLimit(modelData.key)
+                    }
+                }
+            }
+            Row {
+                width: parent.width
+                spacing: Style.space(6)
+
+                TextBox {
+                    id: limitApp
+                    width: (parent.width - addLimit.width - parent.spacing * 2) * 0.55
+                    placeholder: "App"
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    onSubmitted: limitTime.focusInput()
+                }
+                TextBox {
+                    id: limitTime
+                    width: (parent.width - addLimit.width - parent.spacing * 2) * 0.45
+                    placeholder: "1h, 45m"
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    onSubmitted: root.addLimit()
+                }
+                Chip {
+                    id: addLimit
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    anchors.verticalCenter: limitApp.verticalCenter
+                    text: "Add"
+                    onClicked: root.addLimit()
                 }
             }
         }

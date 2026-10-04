@@ -11,7 +11,7 @@ import "plugin/js/Model.js" as Model
 // history. It shows Dashboard with made-up data. Run it with tools/preview.sh.
 //
 // Choose what to show with environment variables:
-//   SCEN     today | year | settings | past | more | hover | hints | empty | goal | ...
+//   SCEN     today | year | settings | past | more | hover | hints | empty | goal | limits | ...
 //   THEMES   comma-separated Omarchy theme folders to switch to, live
 //   BGMODE   off | slime | image     BGPATH  picture path     BGSTRENGTH  1-3
 //   SHIFT    pixels to scroll the content up, to see a tall view's lower part
@@ -87,7 +87,13 @@ ShellRoot {
                     total += ms;
                 }
             }
-            days[Model.dayKey(d)] = { total: total, apps: apps };
+            // Terminal time split over made-up project folders.
+            var term = (apps["nvim"] || 0) + (apps["terminal"] || 0);
+            days[Model.dayKey(d)] = {
+                total: total,
+                apps: apps,
+                projects: { "website": Math.round(term * 0.55), "dotfiles": Math.round(term * 0.3), "notes-cli": Math.round(term * 0.15) }
+            };
         }
         // The real rollover, so the archive path is exercised too.
         return Model.rollArchive(days, {}, 365, today);
@@ -143,6 +149,7 @@ ShellRoot {
             stale: Quickshell.env("STALE") === "1"
             todayKey: shell.todayKey
             dailyGoalHours: shell.scenario === "goal" || shell.scenario === "settings" ? 6 : 0
+            appLimits: shell.scenario === "limits" || shell.scenario === "settings" ? ({ "nvim": 60, "spotify": 600, "counter-strike 2": 45, "ai": 20 }) : ({})
             foreground: Color.foreground
             ignoredApps: shell.scenario === "ignore" ? ["nvim"] : (shell.scenario === "settings" ? ["rofi", "wofi"] : [])
             backgroundMode: art.mode
@@ -153,7 +160,7 @@ ShellRoot {
             showInsights: shell.scenario !== "noinsights"
             showYearLink: shell.scenario !== "noyear"
             iconOnly: shell.scenario === "settings"
-            appNames: shell.scenario === "rename" || shell.scenario === "settings" ? ({ "brave": "Browser", "claude": "AI" }) : ({})
+            appNames: shell.scenario === "rename" || shell.scenario === "settings" || shell.scenario === "limits" ? ({ "brave": "Browser", "claude": "AI" }) : ({})
 
             Component.onCompleted: {
                 var s = shell.scenario;

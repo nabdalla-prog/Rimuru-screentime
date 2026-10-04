@@ -883,3 +883,200 @@ test("CHANGELOG.md has an entry for the current version", () => {
   const changelog = fs.readFileSync(path.join(__dirname, "..", "CHANGELOG.md"), "utf8")
   assert.match(changelog, new RegExp("^## \\[" + manifest.version.replace(/\./g, "\\.") + "\\] - \\d{4}-\\d{2}-\\d{2}$", "m"))
 })
+
+// ---- Idle detection -----------------------------------------------------------
+
+test("parseIdle accepts the offered minutes, defaults to 5", () => {
+  assert.equal(M.parseIdle(0), 0)
+  assert.equal(M.parseIdle("10"), 10)
+  assert.equal(M.parseIdle(15), 15)
+  assert.equal(M.parseIdle(undefined), 5)
+  assert.equal(M.parseIdle(""), 5)
+  assert.equal(M.parseIdle(7), 5)
+  assert.equal(M.parseIdle("abc"), 5)
+})
+
+test("logRecent extends a continuing stretch and forgets old ones", () => {
+  let log = []
+  log = M.logRecent(log, "2026-10-04", "zen", 0, 1000, 60000)
+  log = M.logRecent(log, "2026-10-04", "zen", 1000, 2000, 60000)
+  deepEqual(log, [{ key: "2026-10-04", app: "zen", project: "", start: 0, end: 2000 }])
+  log = M.logRecent(log, "2026-10-04", "nvim", 2000, 3000, 60000)
+  assert.equal(log.length, 2)
+  // A gap starts a new entry even for the same app.
+  log = M.logRecent(log, "2026-10-04", "nvim", 5000, 6000, 60000)
+  assert.equal(log.length, 3)
+  // Everything that ended more than keepMs ago is dropped.
+  log = M.logRecent(log, "2026-10-04", "nvim", 70000, 71000, 60000)
+  deepEqual(log, [{ key: "2026-10-04", app: "nvim", project: "", start: 70000, end: 71000 }])
+  // An empty stretch adds nothing.
+  assert.equal(M.logRecent([], "k", "a", 5, 5, 1000).length, 0)
+})
+
+test("takeBack removes only the time after `since`, per app and day", () => {
+  let days = {}
+  days = M.addTime(days, "2026-10-03", "zen", 3600000)
+  days = M.addTime(days, "2026-10-04", "zen", 120000)
+  days = M.addTime(days, "2026-10-04", "nvim", 60000)
+  const log = [
+    { key: "2026-10-03", app: "zen", start: 0, end: 60000 },
+    { key: "2026-10-04", app: "zen", start: 60000, end: 180000 },
+    { key: "2026-10-04", app: "nvim", start: 180000, end: 240000 },
+  ]
+  const out = M.takeBack(days, log, 120000)
+  // Yesterday is untouched, zen loses 60s, nvim loses all of its 60s.
+  deepEqual(out["2026-10-03"], days["2026-10-03"])
+  deepEqual(out["2026-10-04"], { total: 60000, apps: { zen: 60000 } })
+  // Inputs are not modified.
+  assert.equal(days["2026-10-04"].total, 180000)
+})
+
+test("takeBack never goes below zero and skips missing days", () => {
+  const days = M.addTime({}, "d", "a", 1000)
+  const out = M.takeBack(days, [{ key: "d", app: "a", start: 0, end: 50000 }, { key: "x", app: "a", start: 0, end: 50000 }], 0)
+  deepEqual(out, { d: { total: 0, apps: {} } })
+})
+
+// ---- App limits ---------------------------------------------------------------
+
+test("parseDuration reads minutes and hours written by hand", () => {
+  assert.equal(M.parseDuration(45), 45)
+  assert.equal(M.parseDuration("45"), 45)
+  assert.equal(M.parseDuration("45m"), 45)
+  assert.equal(M.parseDuration("90min"), 90)
+  assert.equal(M.parseDuration("1h"), 60)
+  assert.equal(M.parseDuration("1h30"), 90)
+  assert.equal(M.parseDuration("1h 30m"), 90)
+  assert.equal(M.parseDuration("1.5h"), 90)
+  assert.equal(M.parseDuration("2H"), 120)
+  assert.equal(M.parseDuration("99h"), 1440)
+  assert.equal(M.parseDuration(""), 0)
+  assert.equal(M.parseDuration("0"), 0)
+  assert.equal(M.parseDuration("soon"), 0)
+  assert.equal(M.parseDuration(-5), 0)
+  assert.equal(M.parseDuration(undefined), 0)
+})
+
+test("parseLimits accepts an object or name=duration pairs", () => {
+  deepEqual(M.parseLimits({ YouTube: "1h", Zen: 30, bad: "x" }), { youtube: 60, zen: 30 })
+  deepEqual(M.parseLimits("youtube=1h, zen=45m"), { youtube: 60, zen: 45 })
+  deepEqual(M.parseLimits(undefined), {})
+  deepEqual(M.parseLimits([]), {})
+})
+
+test("limitStatus sums matching apps and flags the ones over", () => {
+  let day = M.newDay()
+  day = M.addTime({ d: day }, "d", "web:youtube.com", 50 * 60000).d
+  day = M.addTime({ d: day }, "d", "nvim", 10 * 60000).d
+  day = M.addTime({ d: day }, "d", "zen", 40 * 60000).d
+  day = M.addTime({ d: day }, "d", "brave", 30 * 60000).d
+  // Two browsers renamed to one name share a limit.
+  const names = { zen: "Browser", brave: "Browser" }
+  const st = M.limitStatus(day, { "youtube.com": 45, browser: 120, steam: 30 }, names)
+  deepEqual(st.map((s) => [s.name, s.usedMs / 60000, s.over]), [
+    ["youtube.com", 50, true],
+    ["browser", 70, false],
+    ["steam", 0, false],
+  ])
+  assert.equal(st[0].label, "youtube.com")
+  assert.equal(st[1].label, "Browser")
+  assert.equal(st[1].leftMs, 50 * 60000)
+  assert.equal(st[0].ratio, 1)
+  deepEqual(M.limitStatus(day, {}, {}), [])
+  deepEqual(M.limitStatus(undefined, { a: 5 }, {}).map((s) => s.usedMs), [0])
+})
+
+test("limitTip suggests today's top app only when it helps", () => {
+  let day = M.newDay()
+  day = M.addTime({ d: day }, "d", "zen", 40 * 60000).d
+  day = M.addTime({ d: day }, "d", "brave", 30 * 60000).d
+  day = M.addTime({ d: day }, "d", "nvim", 50 * 60000).d
+  const names = { zen: "Browser", brave: "Browser" }
+  // Renamed apps are merged, and the key is what a limit matches by.
+  deepEqual(M.limitTip(day, {}, names, false), { key: "browser", name: "Browser", ms: 70 * 60000 })
+  assert.equal(M.limitTip(day, { nvim: 60 }, names, false), null)
+  assert.equal(M.limitTip(day, {}, names, true), null)
+  assert.equal(M.limitTip(M.addTime({}, "d", "zen", 5 * 60000).d, {}, {}, false), null)
+  assert.equal(M.limitTip(M.newDay(), {}, {}, false), null)
+})
+
+// ---- Projects in the terminal --------------------------------------------------
+
+test("addTime files time under a project without changing the total", () => {
+  let days = M.addTime({}, "d", "nvim", 60000, "omarchy-screentime")
+  days = M.addTime(days, "d", "nvim", 30000, "omarchy-screentime")
+  days = M.addTime(days, "d", "zen", 50000)
+  deepEqual(days.d, { total: 140000, apps: { nvim: 90000, zen: 50000 }, projects: { "omarchy-screentime": 90000 } })
+  // Days without projects stay in the old shape.
+  deepEqual(M.addTime({}, "d", "zen", 1000).d, { total: 1000, apps: { zen: 1000 } })
+})
+
+test("projects survive loading, renaming rules and hiding ignored apps", () => {
+  const text = JSON.stringify({ version: 2, days: { "2026-10-04": { total: 5, apps: { "brave-browser": 120000 }, projects: { site: 120000, "": 5, bad: -1 } } } })
+  const parsed = M.parseHistory(text)
+  deepEqual(parsed.days["2026-10-04"].projects, { site: 120000 })
+  deepEqual(M.normalizeKeys(parsed.days)["2026-10-04"].projects, { site: 120000 })
+  deepEqual(M.visibleDay(parsed.days["2026-10-04"], ["zen"], {}).projects, { site: 120000 })
+  // Older files have no projects at all.
+  assert.equal(M.parseHistory(JSON.stringify({ days: { "2026-10-04": { apps: { a: 1000 } } } })).days["2026-10-04"].projects, undefined)
+})
+
+test("takeBack also removes idle time from the project", () => {
+  let days = M.addTime({}, "d", "nvim", 300000, "proj")
+  const log = M.logRecent([], "d", "nvim", 0, 300000, 600000, "proj")
+  const out = M.takeBack(days, log, 120000)
+  deepEqual(out.d, { total: 120000, apps: { nvim: 120000 }, projects: { proj: 120000 } })
+})
+
+test("logRecent keeps different projects apart", () => {
+  let log = M.logRecent([], "d", "nvim", 0, 1000, 60000, "a")
+  log = M.logRecent(log, "d", "nvim", 1000, 2000, 60000, "b")
+  assert.equal(log.length, 2)
+})
+
+test("topProjects lists projects with at least a minute, most first", () => {
+  const day = { total: 0, apps: {}, projects: { a: 30000, b: 3600000, c: 600000 } }
+  deepEqual(M.topProjects(day, 5), [{ name: "b", ms: 3600000 }, { name: "c", ms: 600000 }])
+  deepEqual(M.topProjects(day, 1).map((r) => r.name), ["b"])
+  deepEqual(M.topProjects(M.newDay(), 5), [])
+})
+
+// ---- Break reminder ---------------------------------------------------------------
+
+test("parseBreak accepts the offered minutes, off by default", () => {
+  assert.equal(M.parseBreak(60), 60)
+  assert.equal(M.parseBreak("45"), 45)
+  assert.equal(M.parseBreak(undefined), 0)
+  assert.equal(M.parseBreak(50), 0)
+})
+
+test("breakAdvance reminds once per full interval of unbroken screen time", () => {
+  let s = M.newBreakState()
+  let reminds = 0
+  for (let t = 1; t <= 125 * 60; t++) {
+    const r = M.breakAdvance(s, t * 1000, 1000, 60)
+    s = r.state
+    if (r.remind) reminds++
+  }
+  assert.equal(reminds, 2)
+  assert.equal(s.reminded, 2)
+})
+
+test("a pause of two minutes or more is a break, a shorter one is not", () => {
+  let s = M.breakAdvance(M.newBreakState(), 1000000, 50 * 60000, 60).state
+  s = M.breakPause(s, 1000000)
+  // Back after 1 minute: the streak continues.
+  let r = M.breakAdvance(s, 1000000 + 60000 + 1000, 1000, 60)
+  assert.equal(r.state.streakMs, 50 * 60000 + 1000)
+  // Back after 3 minutes: it starts over.
+  r = M.breakAdvance(s, 1000000 + 180000 + 1000, 1000, 60)
+  assert.equal(r.state.streakMs, 1000)
+  assert.equal(r.state.reminded, 0)
+  // The earliest pause wins.
+  assert.equal(M.breakPause(M.breakPause(s, 5), 9).pausedAt, 5)
+})
+
+test("breakAdvance never reminds when off", () => {
+  const r = M.breakAdvance(M.newBreakState(), 1, 10 * 3600000, 0)
+  assert.equal(r.remind, false)
+})

@@ -10,6 +10,7 @@ import "../js/Model.js" as Model
 // Time is attributed once per second to whichever window is focused at that
 // tick. Nothing is counted while the session is locked, while the screensaver
 // or a desktop portal has focus, when no window has focus, for ignored apps,
+// after a few minutes without keyboard or mouse input (see "Idle" below),
 // or across a suspend (a gap longer than maxGapMs is treated as the machine
 // being asleep, not as usage). A tick that spans midnight is split between
 // the two days.
@@ -28,7 +29,7 @@ Item {
     // running service, which the shell keeps loaded, is still the old one) the
     // UI tells the user to restart the shell. Bump it in both files whenever
     // what the UI reads from or calls on the service changes.
-    readonly property int apiLevel: 4
+    readonly property int apiLevel: 7
 
     // ---- Update notice -----------------------------------------------------
     // The shell keeps this plugin loaded, so after an update (new files on disk)
@@ -73,6 +74,10 @@ Item {
     property var ignoredApps: []
     property var appNames: ({})
     property int dailyGoalHours: 0
+    property int idleMinutes: Model.IDLE_DEFAULT
+    property var appLimits: ({})
+    property int breakMinutes: 0
+    property bool trackProjects: true
     property string settingsKey: ""
 
     function applySettings(s) {
@@ -80,14 +85,32 @@ Item {
         var ignored = Model.parseList(src.ignoredApps);
         var names = Model.parseNames(src.appNames);
         var goal = Model.parseGoal(src.dailyGoalHours);
+        var idle = Model.parseIdle(src.idleMinutes);
+        var limits = Model.parseLimits(src.appLimits);
+        var breakMin = Model.parseBreak(src.breakMinutes);
+        var projects = Model.parseBool(src.trackProjects, true);
         // The widget re-sends settings on every change to its entry; skip no-ops.
-        var key = JSON.stringify([ignored, names, goal]);
+        var key = JSON.stringify([ignored, names, goal, idle, limits, breakMin, projects]);
         if (key === settingsKey)
             return;
         settingsKey = key;
         ignoredApps = ignored;
         appNames = names;
         dailyGoalHours = goal;
+        idleMinutes = idle;
+        appLimits = limits;
+        trackProjects = projects;
+        if (breakMin !== breakMinutes) {
+            breakMinutes = breakMin;
+            // A new interval starts counting from the current streak, without
+            // reminding at once for time already past it.
+            if (breakMin > 0)
+                breaks = {
+                    "streakMs": breaks.streakMs,
+                    "pausedAt": breaks.pausedAt,
+                    "reminded": Math.floor(breaks.streakMs / (breakMin * 60000))
+                };
+        }
     }
 
     // ---- Data ------------------------------------------------------------------
@@ -119,6 +142,8 @@ Item {
     readonly property string focusedTitle: activeWindow && activeWindow.title ? String(activeWindow.title) : ""
     // What the resolver found for the focused terminal or game ("" = nothing).
     property string resolvedName: ""
+    // The project folder the terminal's command works in ("" = none).
+    property string resolvedProject: ""
     // True from focusing a terminal/game until the resolver answers, so the
     // first moments aren't filed under the wrong name.
     property bool resolvePending: false
@@ -130,10 +155,11 @@ Item {
 
     // The key today's time is filed under.
     readonly property string focusedApp: Model.canonicalApp(rawApp, resolvedName)
-    readonly property bool tracking: ready && !sessionLocked && rawApp !== "" && !resolvePending && !Model.isSystemWindow(rawApp) && !Model.isIgnored(ignoredApps, appNames, focusedApp, rawApp)
+    readonly property bool tracking: ready && !sessionLocked && !userIdle && rawApp !== "" && !resolvePending && !Model.isSystemWindow(rawApp) && !Model.isIgnored(ignoredApps, appNames, focusedApp, rawApp)
 
     onRawAppChanged: {
         resolvedName = "";
+        resolvedProject = "";
         if (needsResolve) {
             resolvePending = true;
             resolveWatchdog.restart();
@@ -165,7 +191,9 @@ Item {
         // An answer for a window that has since lost focus is stale.
         if (resolveFor !== rawApp)
             return;
-        resolvedName = String(output).trim();
+        var lines = String(output).trim().split("\n");
+        resolvedName = (lines[0] || "").trim();
+        resolvedProject = isTerminal ? (lines[1] || "").trim() : "";
         resolvePending = false;
         resolveWatchdog.stop();
     }
@@ -221,15 +249,116 @@ Item {
             dirty = true;
         }
 
-        if (!tracking || delta <= 0 || delta > maxGapMs)
+        if (!tracking || delta <= 0 || delta > maxGapMs) {
+            // Asleep since the last tick, or simply not counting: a break
+            // starts (the earliest moment is kept).
+            if (ready)
+                breaks = Model.breakPause(breaks, delta > maxGapMs ? from : now);
             return;
+        }
         var app = focusedApp;
+        var project = trackProjects && isTerminal ? resolvedProject : "";
         var next = days;
+        var log = recent;
+        var at = from;
         var parts = Model.splitByDay(from, now);
-        for (var i = 0; i < parts.length; i++)
-            next = Model.addTime(next, parts[i].key, app, parts[i].ms);
+        for (var i = 0; i < parts.length; i++) {
+            next = Model.addTime(next, parts[i].key, app, parts[i].ms, project);
+            log = Model.logRecent(log, parts[i].key, app, at, at + parts[i].ms, idleMs, project);
+            at += parts[i].ms;
+        }
         days = next;
+        recent = log;
         dirty = true;
+
+        var b = Model.breakAdvance(breaks, now, delta, breakMinutes);
+        breaks = b.state;
+        if (b.remind)
+            Quickshell.execDetached(["notify-send", "--app-name=Screen Time", "--icon=preferences-desktop-screensaver", "Time for a short break", "You've been at the screen for " + Model.fmt(b.state.streakMs) + ". Look at something far away for 20 seconds, or stand up and stretch."]);
+    }
+
+    // ---- Break reminder ----------------------------------------------------------
+    // Screen time since the last break (two minutes away: idle, locked, asleep
+    // or nothing focused). Off unless `breakMinutes` is set.
+    property var breaks: Model.newBreakState()
+    readonly property double breakStreakMs: breaks.streakMs
+
+    // ---- App limits ------------------------------------------------------------
+    // Each app with a daily limit gets one desktop notification the day it
+    // reaches it; the bar turns the urgent colour while any app is over.
+
+    readonly property var limitStatus: Model.limitStatus(visibleToday, appLimits, appNames)
+    readonly property var overLimits: limitStatus.filter(function (s) {
+        return s.over;
+    })
+    // "YYYY-MM-DD|name" of the limits already announced.
+    property var notified: ({})
+    // The first check after starting only takes note, so restarting the shell
+    // doesn't repeat today's notifications.
+    property bool limitsPrimed: false
+
+    onLimitStatusChanged: checkLimits()
+    onTodayKeyChanged: notified = ({})
+
+    function checkLimits() {
+        if (!ready)
+            return;
+        var next = null;
+        for (var i = 0; i < limitStatus.length; i++) {
+            var s = limitStatus[i];
+            var id = todayKey + "|" + s.name;
+            if (!s.over || notified[id])
+                continue;
+            next = next || Object.assign({}, notified);
+            next[id] = true;
+            if (limitsPrimed)
+                Quickshell.execDetached(["notify-send", "--app-name=Screen Time", "--icon=appointment-soon", s.label + ": daily limit reached", "You've used " + Model.fmt(s.usedMs) + " of your " + Model.fmt(s.limitMs) + " today."]);
+        }
+        if (next)
+            notified = next;
+        limitsPrimed = true;
+    }
+
+    // One line per limit, for `omarchy-shell rimuru.screentime limits`.
+    function limitsSummary() {
+        if (limitStatus.length === 0)
+            return "No limits set";
+        return limitStatus.map(function (s) {
+            return s.label + "  " + Model.fmt(s.usedMs) + " / " + Model.fmt(s.limitMs) + (s.over ? "  OVER" : "");
+        }).join("\n");
+    }
+
+    // ---- Idle ------------------------------------------------------------------
+    // The compositor reports when there has been no keyboard or mouse input for
+    // `idleMinutes`. Apps that keep the screen awake (a playing video, a call)
+    // hold that off, so watching still counts. By the time it fires, the wait
+    // itself has been counted although nobody was there, so it is taken back.
+
+    readonly property double idleMs: idleMinutes * 60000
+    readonly property bool userIdle: idleMonitor.enabled && idleMonitor.isIdle
+    // What was counted during the last idleMs (see Model.logRecent).
+    property var recent: []
+
+    IdleMonitor {
+        id: idleMonitor
+        enabled: root.ready && root.idleMinutes > 0
+        timeout: root.idleMinutes * 60
+        respectInhibitors: true
+    }
+
+    onUserIdleChanged: {
+        // Gone since the idle wait began, which is already longer than a break.
+        if (userIdle)
+            breaks = Model.breakPause({
+                "streakMs": Math.max(0, breaks.streakMs - idleMs),
+                "pausedAt": 0,
+                "reminded": breaks.reminded
+            }, Date.now() - idleMs);
+        if (userIdle && recent.length > 0) {
+            days = Model.takeBack(days, recent, Date.now() - idleMs);
+            dirty = true;
+        }
+        recent = [];
     }
 
     // Clears today only; earlier days and the archive are untouched. The window
@@ -238,6 +367,7 @@ Item {
         var next = Object.assign({}, days);
         delete next[todayKey];
         days = next;
+        recent = [];
         dirty = true;
         save();
     }
@@ -246,6 +376,7 @@ Item {
     function resetAll() {
         days = ({});
         archive = ({});
+        recent = [];
         dirty = true;
         save();
     }

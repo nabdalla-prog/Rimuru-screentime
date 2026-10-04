@@ -169,6 +169,11 @@ Panel {
                     backgroundFit: art.fit
                     backgroundStatus: art.status
                     weekCap: Model.parseWeeks(root.setting("weeks", 52))
+                    idleMinutes: Model.parseIdle(root.setting("idleMinutes", Model.IDLE_DEFAULT))
+                    appLimits: Model.parseLimits(root.setting("appLimits", {}))
+                    limitTipDismissed: Model.parseBool(root.setting("limitTipDismissed", false), false)
+                    trackProjects: Model.parseBool(root.setting("trackProjects", true), true)
+                    breakMinutes: Model.parseBreak(root.setting("breakMinutes", 0))
                     danger: root.bar ? root.bar.urgent : Color.urgent
                     foreground: root.contentForeground
                     fontFamily: root.contentFontFamily

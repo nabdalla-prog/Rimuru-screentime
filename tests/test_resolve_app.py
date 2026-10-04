@@ -148,5 +148,37 @@ class ProcTree(unittest.TestCase):
         self.assertIsNone(R.read_stat(2**30))
 
 
+class ProjectName(unittest.TestCase):
+    HOME = "/home/u"
+
+    def exists(self, *markers):
+        return lambda p: p in markers
+
+    def test_nearest_marker_above_the_working_dir(self):
+        ex = self.exists("/home/u/code/site/.git")
+        self.assertEqual(R.project_name("/home/u/code/site/src/lib", self.HOME, ex), "site")
+
+    def test_any_marker_counts(self):
+        ex = self.exists("/home/u/tools/cli/Cargo.toml")
+        self.assertEqual(R.project_name("/home/u/tools/cli", self.HOME, ex), "cli")
+
+    def test_home_itself_and_outside_home_never_count(self):
+        ex = self.exists("/home/u/.git", "/etc/.git", "/home/u/Downloads/.git")
+        self.assertIsNone(R.project_name("/home/u", self.HOME, ex))
+        self.assertIsNone(R.project_name("/home/u/notes", self.HOME, ex))
+        self.assertIsNone(R.project_name("/etc", self.HOME, ex))
+        self.assertIsNone(R.project_name("/home/user2/x", self.HOME, ex))
+
+    def test_no_marker_or_no_dir(self):
+        self.assertIsNone(R.project_name("/home/u/Downloads/x", self.HOME, self.exists()))
+        self.assertIsNone(R.project_name(None, self.HOME, self.exists()))
+
+    def test_real_folder(self):
+        with tempfile.TemporaryDirectory() as home:
+            os.makedirs(os.path.join(home, "proj", ".git"))
+            os.makedirs(os.path.join(home, "proj", "src"))
+            self.assertEqual(R.project_name(os.path.join(home, "proj", "src"), home), "proj")
+
+
 if __name__ == "__main__":
     unittest.main()

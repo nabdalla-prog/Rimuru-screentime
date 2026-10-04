@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "rimuru.screentime",
   "name": "Screen Time",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "author": "nabdalla",
   "description": "Daily screen time per app in your Omarchy bar: sees what runs inside terminals, names Steam games, folds browsers and web apps. The popup has a donut chart, a 52-week trend, insights, a yearly overview that reaches back to your first day, a daily goal, a settings menu and an optional faint background picture. Fully local: nothing leaves your machine.",
   "kinds": [
@@ -29,6 +29,19 @@
         "max": 24,
         "step": 1,
         "defaultValue": 0
+      },
+      {
+        "key": "idleMinutes",
+        "type": "enum",
+        "label": "Stop counting after no input for (minutes, 0 = off)",
+        "options": [
+          "0",
+          "2",
+          "5",
+          "10",
+          "15"
+        ],
+        "defaultValue": "5"
       },
       {
         "key": "weeks",
@@ -61,6 +74,38 @@
         "label": "Custom app names",
         "defaultValue": "",
         "description": "app=Name pairs, comma-separated, e.g. zen=Browser, foot=Terminal."
+      },
+      {
+        "key": "appLimits",
+        "type": "string",
+        "label": "Daily app limits",
+        "defaultValue": "",
+        "description": "app=duration pairs, comma-separated, e.g. youtube.com=1h, steam=45m."
+      },
+      {
+        "key": "breakMinutes",
+        "type": "enum",
+        "label": "Break reminder after (minutes, 0 = off)",
+        "options": [
+          "0",
+          "30",
+          "45",
+          "60",
+          "90"
+        ],
+        "defaultValue": "0"
+      },
+      {
+        "key": "trackProjects",
+        "type": "boolean",
+        "label": "Time per project folder in the terminal",
+        "defaultValue": true
+      },
+      {
+        "key": "limitTipDismissed",
+        "type": "boolean",
+        "label": "Hide the daily limit tip",
+        "defaultValue": false
       },
       {
         "key": "backgroundMode",
