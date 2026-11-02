@@ -3,6 +3,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "../js/Model.js" as Model
+import "Bridge.js" as Bridge
 
 // Bar button showing today's total, and the host for the popup panel.
 // Left click opens the panel; right click switches between "icon + time" and
@@ -11,7 +12,16 @@ BarWidget {
     id: root
     moduleName: "rimuru.screentime"
 
-    readonly property var service: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
+    readonly property var directService: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
+    property var bridgedService: null
+    readonly property var service: directService || bridgedService
+    Timer {
+        interval: 1000
+        running: !root.directService
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.bridgedService = Bridge.current()
+    }
     // Must match Service.qml's apiLevel. If it doesn't, the shell is still
     // running an older service than these files (see Service.qml).
     readonly property int requiredApiLevel: 7

@@ -1080,3 +1080,10 @@ test("breakAdvance never reminds when off", () => {
   const r = M.breakAdvance(M.newBreakState(), 1, 10 * 3600000, 0)
   assert.equal(r.remind, false)
 })
+
+test("the service and bar widget share the sibling replacement-bar bridge", () => {
+  for (const file of ["Service.qml", "BarWidget.qml"]) {
+    const source = fs.readFileSync(path.join(__dirname, "..", "qml", file), "utf8")
+    assert.match(source, /import "Bridge\.js" as Bridge/)
+  }
+})
