@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import "../js/Model.js" as Model
+import "Bridge.js" as Bridge
 
 // Tracks which app has focus and adds the elapsed time to today's bucket.
 // Headless: the bar widget reads `today`, `days` and `label` from here.
@@ -476,8 +477,14 @@ Item {
         onTriggered: root.save()
     }
 
-    Component.onCompleted: ensureDir.running = true
-    Component.onDestruction: root.save()
+    Component.onCompleted: {
+        Bridge.publish(root);
+        ensureDir.running = true;
+    }
+    Component.onDestruction: {
+        Bridge.clear(root);
+        root.save();
+    }
 
     // ---- Lock state --------------------------------------------------------
     // Preferred: the shell's lock service reports changes as they happen.
