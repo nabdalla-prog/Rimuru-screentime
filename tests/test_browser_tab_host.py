@@ -5,6 +5,7 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 SOURCE = Path(__file__).resolve().parents[1] / "python/browser_tab_host.py"
@@ -56,6 +57,20 @@ class BrowserTabHostTests(unittest.TestCase):
             path = Path(directory) / "browser-tab.json"
             host.run_host(path, io.BytesIO(frame({"active": False})))
             self.assertEqual(json.loads(path.read_text())["active"], False)
+
+    def test_unchanged_state_refreshes_slowly_and_changes_write_immediately(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "browser-tab.json"
+            github = {"active": True, "host": "github.com", "titleKey": "title:abc:123"}
+            youtube = {"active": True, "host": "youtube.com", "titleKey": "title:abc:123"}
+            new_title = {"active": True, "host": "youtube.com", "titleKey": "title:def:456"}
+            messages = [github, github, github, github, youtube, new_title, new_title, {"active": False}, {"active": False}]
+            times = [100, 102, 119, 120, 121, 122, 123, 124, 125]
+            stream = io.BytesIO(b"".join(frame(message) for message in messages))
+            with patch.object(host.time, "time", side_effect=times), patch.object(host.os, "replace", wraps=host.os.replace) as replace:
+                host.run_host(path, stream)
+            self.assertEqual(replace.call_count, 5)
+            self.assertEqual(json.loads(path.read_text()), {"active": False, "at": 124000})
 
 
 if __name__ == "__main__":

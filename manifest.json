@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "rimuru.screentime",
   "name": "Screen Time",
-  "version": "0.7.4",
+  "version": "0.8.0",
   "author": "nabdalla",
   "description": "Daily screen time per app in your Omarchy bar, with daily limits, terminal projects, Steam games, trends and a yearly overview. An optional browser extension adds focused site totals by domain, such as youtube.com. Fully local: nothing leaves your machine.",
   "kinds": [

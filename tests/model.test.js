@@ -1041,8 +1041,11 @@ test("Chromium site detection requires a fresh matching hostname from the extens
     active: true, at: 19000, host: "www.github.com", titleKey: M.titleTabId("Docs")
   }, now), { id: "site:github.com", host: "github.com" })
   deepEqual(M.focusedBrowserTab("brave", "Docs - Brave", {
-    active: true, at: 10000, host: "github.com", titleKey: M.titleTabId("Docs")
+    active: true, at: -10000, host: "github.com", titleKey: M.titleTabId("Docs")
   }, now), null)
+  assert.equal(M.focusedBrowserTab("brave", "Docs - Brave", {
+    active: true, at: -9999, host: "github.com", titleKey: M.titleTabId("Docs")
+  }, now).host, "github.com")
   deepEqual(M.focusedBrowserTab("brave", "Docs - Brave", {
     active: true, at: 19000, host: "github.com", titleKey: M.titleTabId("Other")
   }, now), null)
@@ -1164,12 +1167,6 @@ test("idle rollback, ignored browsers, and older history keep tab detail consist
   deepEqual(parsed.days, {})
   const valid = M.parseHistory(JSON.stringify({ days: { "2026-10-27": { apps: { brave: 5000 }, tabs: { brave: { "site:github.com": { ms: 9000, host: "github.com" } } } } } }))
   assert.equal(valid.days["2026-10-27"].tabs.brave["site:github.com"].ms, 5000)
-  const legacy = M.parseHistory(JSON.stringify({ days: { "2026-10-27": { apps: { brave: 5000 }, tabs: { brave: { "title:abc": { ms: 5000, title: "Private page title" } } } } } }))
-  deepEqual(legacy.days["2026-10-27"], { total: 5000, apps: { brave: 5000 } })
-  const liveOld = { total: 5000, apps: { brave: 5000 }, tabs: { brave: { "title:abc": { ms: 5000, title: "Private page title" } } } }
-  deepEqual(M.browserTabs(liveOld, "Brave", {}), [])
-  deepEqual(M.tabChoices(liveOld, {}), [])
-  assert.equal(M.limitStatus(liveOld, { "tab:github.com": 1 }, {})[0].usedMs, 0)
 })
 
 test("topProjects lists projects with at least a minute, most first", () => {

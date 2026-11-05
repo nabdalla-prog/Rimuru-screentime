@@ -2,7 +2,7 @@
 
 All notable changes to this plugin. Versions follow `manifest.json`; each is a tagged release on GitHub.
 
-## [0.7.4] - 2026-10-28
+## [0.8.0] - 2026-11-05
 
 ### Added
 - Focused Chromium site time under each browser's app total. Hover a browser in the popup to see domains such as `youtube.com`. The optional Chromium companion extension supplies the hostname; page titles are not stored.
@@ -11,7 +11,8 @@ All notable changes to this plugin. Versions follow `manifest.json`; each is a t
 
 ### Changed
 - Hovering a Chromium browser in the donut or app list now splits its slice into site domains. Hovering a site row highlights the corresponding ring segment and shows its time in the center; leaving the chart returns to the app view.
-- Recent history stores site detail alongside apps and projects. Older page-title detail is discarded on load; browser time without a known domain appears as unclassified when site detail is available.
+- Recent history stores site detail alongside apps and projects; browser time without a known domain appears as unclassified when site detail is available.
+- The browser host refreshes unchanged site state every 20 seconds, reducing disk writes while the plugin accepts state up to 30 seconds old.
 
 ### Fixed
 - The app legend rows no longer overlap when the stable hover target is active.

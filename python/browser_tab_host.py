@@ -22,6 +22,7 @@ BROWSERS = {
     "vivaldi": "vivaldi",
     "edge": "microsoft-edge",
 }
+STATE_REFRESH_SECONDS = 20
 
 
 def install(browser, extension_id, config_home=None):
@@ -49,6 +50,8 @@ def install(browser, extension_id, config_home=None):
 
 def run_host(state_path=STATE, source=None):
     source = source or sys.stdin.buffer
+    last_identity = None
+    last_write = 0
     while True:
         length_bytes = source.read(4)
         if not length_bytes:
@@ -78,7 +81,11 @@ def run_host(state_path=STATE, source=None):
                 continue
             if not isinstance(title_key, str) or not re.fullmatch(r"title:[0-9a-f]{1,8}:[0-9a-f]{1,8}", title_key):
                 continue
-        state = {"active": active, "at": int(time.time() * 1000)}
+        identity = (active, host, title_key) if active else (False,)
+        now = time.time()
+        if identity == last_identity and now - last_write < STATE_REFRESH_SECONDS:
+            continue
+        state = {"active": active, "at": int(now * 1000)}
         if active:
             state.update({"host": host, "titleKey": title_key})
         state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -88,6 +95,8 @@ def run_host(state_path=STATE, source=None):
                 json.dump(state, output)
                 output.write("\n")
             os.replace(temporary, state_path)
+            last_identity = identity
+            last_write = now
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)

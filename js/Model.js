@@ -12,7 +12,7 @@
 
 var KEEP_DAYS = 365
 // Shown in the settings menu. A test keeps it equal to manifest.json's version.
-var VERSION = "0.7.4"
+var VERSION = "0.8.0"
 
 function pad(n) {
   return n < 10 ? "0" + n : "" + n
@@ -99,8 +99,6 @@ function parseHistory(text) {
           if (!sourceTab || !validMs(sourceTab.ms) || !sourceTab.ms || left <= 0) continue
           var amount = Math.min(left, Math.round(sourceTab.ms))
           var host = siteEntry(tabId, sourceTab)
-          // Older releases stored page titles and session IDs. Keep their app
-          // totals, but do not carry those titles into the new site history.
           if (!host) continue
           d.tabs = d.tabs || {}
           d.tabs[browser] = d.tabs[browser] || {}
@@ -300,7 +298,7 @@ function focusedBrowserTab(app, windowTitle, bridge, now) {
   if (!title) return null
   var host = siteHost(bridge && bridge.host)
   if (bridge && bridge.active === true && typeof bridge.at === "number" &&
-      now - bridge.at >= 0 && now - bridge.at < 5000 &&
+      now - bridge.at >= 0 && now - bridge.at < 30000 &&
       host && bridge.titleKey === titleTabId(title))
     return { id: "site:" + host, host: host }
   return null
