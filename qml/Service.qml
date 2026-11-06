@@ -433,11 +433,28 @@ Item {
     // path is passed as an argument (no shell), so it can't be misparsed.
     Process {
         id: ensureDir
-        command: ["mkdir", "-p", root.dataDir]
+        command: ["mkdir", "-p", "-m", "700", root.dataDir]
+        onExited: lockDown.running = true
+    }
+
+    // The history shows which apps and sites the user spends time on, so only
+    // they may read it: the folder is 0700 and the history 0600. This also
+    // fixes folders and files that older releases left readable by everyone.
+    // -f: on first run the history doesn't exist yet, and that's fine.
+    Process {
+        id: lockDown
+        command: ["chmod", "-f", "go=", root.dataDir, root.historyPath]
         onExited: historyFile.path = root.historyPath
     }
 
+    property bool historyLocked: false
+    Process {
+        id: lockFile
+        command: ["chmod", "600", root.historyPath]
+    }
+
     // Keep an unreadable history instead of overwriting it with an empty one.
+    // The copy keeps the original's private permissions.
     Process {
         id: keepCorrupt
         onExited: root.start()
@@ -457,12 +474,20 @@ Item {
                 root.start();
             } else {
                 console.warn("screentime: " + root.historyPath + " is unreadable, keeping a copy and starting fresh");
-                keepCorrupt.command = ["cp", "-f", root.historyPath, root.historyPath + ".corrupt-" + Date.now()];
+                keepCorrupt.command = ["cp", "-f", "--preserve=mode", root.historyPath, root.historyPath + ".corrupt-" + Date.now()];
                 keepCorrupt.running = true;
             }
         }
         // First run: no file yet.
         onLoadFailed: root.start()
+        // Saves keep the file's mode, but the first save of a new install
+        // creates it with the default one, so make it private once per run.
+        onSaved: {
+            if (!root.historyLocked) {
+                root.historyLocked = true;
+                lockFile.running = true;
+            }
+        }
         onSaveFailed: {
             console.warn("screentime: could not save history, will retry");
             root.dirty = true;

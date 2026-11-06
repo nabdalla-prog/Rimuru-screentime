@@ -58,6 +58,13 @@ class BrowserTabHostTests(unittest.TestCase):
             host.run_host(path, io.BytesIO(frame({"active": False})))
             self.assertEqual(json.loads(path.read_text())["active"], False)
 
+    def test_state_folder_and_file_are_private(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "data" / "browser-tab.json"
+            host.run_host(path, io.BytesIO(frame({"active": False})))
+            self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
     def test_unchanged_state_refreshes_slowly_and_changes_write_immediately(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "browser-tab.json"

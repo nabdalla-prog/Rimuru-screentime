@@ -14,6 +14,9 @@ All notable changes to this plugin. Versions follow `manifest.json`; each is a t
 - Recent history stores site detail alongside apps and projects; browser time without a known domain appears as unclassified when site detail is available.
 - The browser host refreshes unchanged site state every 20 seconds, reducing disk writes while the plugin accepts state up to 30 seconds old.
 
+### Security
+- Screen-time history is now private to your user: its folder is `0700` and `history.json` `0600`, including folders and files left readable by everyone by older releases (fixed on the next start). The history lists the apps and, with the extension, the sites you use, so other accounts on the same machine should not be able to read it.
+
 ### Fixed
 - The app legend rows no longer overlap when the stable hover target is active.
 - Hovering a browser splits only its app slice into tab slices; the other apps retain their positions and proportions.

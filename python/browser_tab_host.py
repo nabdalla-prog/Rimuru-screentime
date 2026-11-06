@@ -88,7 +88,8 @@ def run_host(state_path=STATE, source=None):
         state = {"active": active, "at": int(now * 1000)}
         if active:
             state.update({"host": host, "titleKey": title_key})
-        state_path.parent.mkdir(parents=True, exist_ok=True)
+        # The plugin keeps this folder private (0700); create it that way too.
+        state_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         descriptor, temporary = tempfile.mkstemp(prefix=".browser-tab-", dir=state_path.parent)
         try:
             with os.fdopen(descriptor, "w") as output:
