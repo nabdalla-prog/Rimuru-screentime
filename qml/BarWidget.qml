@@ -24,7 +24,7 @@ BarWidget {
     }
     // Must match Service.qml's apiLevel. If it doesn't, the shell is still
     // running an older service than these files (see Service.qml).
-    readonly property int requiredApiLevel: 7
+    readonly property int requiredApiLevel: 8
     readonly property bool serviceStale: service !== null && service.apiLevel !== requiredApiLevel
     // New files were installed while this code keeps running.
     readonly property bool updatePending: service !== null && service.updatePending === true

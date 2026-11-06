@@ -25,6 +25,7 @@ Item {
     property int dailyGoalHours: 0
     property int idleMinutes: Model.IDLE_DEFAULT
     property var appLimits: ({})
+    property var todayTabs: []
     property bool trackProjects: true
     property int breakMinutes: 0
     property var ignoredApps: []
@@ -47,8 +48,17 @@ Item {
 
     readonly property color dim: Qt.darker(foreground, 1.5)
     readonly property var limitEntries: Object.keys(appLimits).map(function (k) {
+        var label = k;
+        if (k.slice(0, 4) === "tab:") {
+            for (var i = 0; i < todayTabs.length; i++)
+                if (todayTabs[i].id.toLowerCase() === k.slice(4)) {
+                    label = "Site: " + todayTabs[i].title;
+                    break;
+                }
+        }
         return {
             "key": k,
+            "label": label,
             "ms": appLimits[k] * 60000
         };
     })
@@ -101,6 +111,10 @@ Item {
         var next = Object.assign({}, appLimits);
         delete next[key];
         settingChanged("appLimits", next);
+    }
+    function chooseTab(id) {
+        limitApp.text = "tab:" + id;
+        limitTime.focusInput();
     }
     function releaseFocus() {
         backgroundBox.release();
@@ -684,6 +698,15 @@ Item {
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.body
             }
+            Text {
+                textFormat: Text.PlainText
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: "Pick a site seen today or enter tab:youtube.com to set a daily limit for that domain. Limits send a reminder when reached."
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+            }
             Flow {
                 width: parent.width
                 spacing: Style.space(6)
@@ -705,9 +728,33 @@ Item {
                         required property var modelData
                         foreground: root.foreground
                         fontFamily: root.fontFamily
-                        text: modelData.key + " · " + Model.fmt(modelData.ms)
+                        text: modelData.label + " · " + Model.fmt(modelData.ms)
                         removable: true
                         onClicked: root.removeLimit(modelData.key)
+                    }
+                }
+            }
+            Flickable {
+                visible: root.todayTabs.length > 0
+                width: parent.width
+                height: visible ? Math.min(tabChipFlow.implicitHeight, Style.space(112)) : 0
+                contentWidth: width
+                contentHeight: tabChipFlow.implicitHeight
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                Flow {
+                    id: tabChipFlow
+                    width: parent.width
+                    spacing: Style.space(6)
+                    Repeater {
+                        model: root.todayTabs
+                        Chip {
+                            required property var modelData
+                            foreground: root.foreground
+                            fontFamily: root.fontFamily
+                            text: modelData.browser + ": " + modelData.title.slice(0, 32) + (modelData.title.length > 32 ? "…" : "")
+                            onClicked: root.chooseTab(modelData.id)
+                        }
                     }
                 }
             }
@@ -718,7 +765,7 @@ Item {
                 TextBox {
                     id: limitApp
                     width: (parent.width - addLimit.width - parent.spacing * 2) * 0.55
-                    placeholder: "App"
+                    placeholder: "App or tab:youtube.com"
                     foreground: root.foreground
                     fontFamily: root.fontFamily
                     onSubmitted: limitTime.focusInput()

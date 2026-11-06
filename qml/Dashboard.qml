@@ -61,6 +61,9 @@ Item {
     property bool showMore: false
     property bool showShare: false
     property int hoverIndex: -1
+    property string moreHoveredName: ""
+    property string drillBrowserName: ""
+    property string hoveredTabKey: ""
     // Key hints ("f"): small key caps naming each control's shortcut.
     property bool hints: false
     property string view: "day"       // "day", "year" or "settings"
@@ -79,6 +82,20 @@ Item {
 
     readonly property var dayData: active ? Model.visibleDay(days[activeKey] || Model.newDay(), ignoredApps, appNames) : Model.newDay()
     readonly property var slices: active ? Model.donutSlices(dayData, appNames, maxLegendApps, 0.03) : []
+    readonly property string hoverBrowserName: drillBrowserName !== "" ? drillBrowserName : (moreHoveredName !== "" ? moreHoveredName : (hoverIndex >= 0 && hoverIndex < slices.length && !slices[hoverIndex].other ? slices[hoverIndex].name : ""))
+    readonly property var hoveredTabs: active ? Model.browserTabs(dayData, hoverBrowserName, appNames) : []
+    readonly property var drilledRows: drillBrowserName !== "" ? hoveredTabs.map(function (row) {
+        return Object.assign({}, row, { "hoverKey": row.id || row.title });
+    }) : []
+    readonly property var tabSlices: Model.tabDonutSlices(drilledRows)
+    readonly property int hoveredTabIndex: {
+        for (var i = 0; i < tabSlices.length; i++)
+            if (tabSlices[i].key === hoveredTabKey)
+                return i;
+        return -1;
+    }
+    readonly property double drilledTotal: drilledRows.reduce(function (sum, row) { return sum + row.ms; }, 0)
+    readonly property var todayTabs: active ? Model.tabChoices(Model.visibleDay(days[todayKey] || Model.newDay(), ignoredApps, appNames), appNames) : []
     // The apps the legend doesn't list (they sit under "Other" in the donut).
     readonly property var moreRows: active && showMore ? Model.topApps(dayData, 100000, appNames).slice(headCount) : []
     // Never further back than the graph reach allows, even if it was shortened
@@ -151,6 +168,78 @@ Item {
             }));
         return out;
     }
+    readonly property var tabColors: {
+        var out = [];
+        var baseColor = hoverIndex >= 0 && hoverIndex < sliceColors.length ? sliceColors[hoverIndex] : foreground;
+        var baseHue = baseColor.hslSaturation > 0.15 ? baseColor.hslHue : foreground.hslHue;
+        for (var i = 0; i < tabSlices.length; i++) {
+            if (tabSlices[i].unknown)
+                out.push(Qt.rgba(foreground.r, foreground.g, foreground.b, 0.45));
+            else
+                out.push(Qt.hsla((baseHue + i * 0.105) % 1, 0.60, i % 2 === 0 ? 0.57 : 0.68, 1));
+        }
+        return out;
+    }
+    readonly property var expandedSlices: Model.expandedDonutSlices(slices, drillBrowserName !== "" ? hoverIndex : -1, drilledRows)
+    readonly property var coloredExpandedSlices: {
+        var out = [];
+        for (var i = 0; i < expandedSlices.length; i++) {
+            var slice = expandedSlices[i];
+            var color = slice.kind === "tab" ? tabColors[slice.tabIndex] : sliceColors[slice.appIndex];
+            out.push(Object.assign({}, slice, { "color": color }));
+        }
+        return out;
+    }
+    readonly property int hoveredDonutIndex: {
+        for (var i = 0; i < expandedSlices.length; i++) {
+            var slice = expandedSlices[i];
+            if (slice.kind === "tab" && slice.tabIndex === hoveredTabIndex) return i;
+            if (drillBrowserName === "" && slice.appIndex === hoverIndex) return i;
+        }
+        return -1;
+    }
+    readonly property var highlightedTabGroup: {
+        var out = [];
+        if (drillBrowserName !== "" && hoveredTabIndex < 0)
+            for (var i = 0; i < expandedSlices.length; i++)
+                if (expandedSlices[i].kind === "tab") out.push(i);
+        return out;
+    }
+
+    function clearDrill() {
+        closeDrill.stop();
+        drillBrowserName = "";
+        hoveredTabKey = "";
+        hoverIndex = -1;
+        moreHoveredName = "";
+    }
+    function scheduleClearDrill() {
+        if (hoverIndex >= 0) {
+            closeDrill.interval = drillBrowserName !== "" ? 900 : 180;
+            closeDrill.restart();
+        }
+    }
+    function focusApp(index, moreName) {
+        closeDrill.stop();
+        var requestedMore = moreName || "";
+        if (hoverIndex === index && moreHoveredName === requestedMore) return;
+        hoverIndex = index;
+        moreHoveredName = requestedMore;
+        var name = moreHoveredName !== "" ? moreHoveredName : (index >= 0 && index < slices.length && !slices[index].other ? slices[index].name : "");
+        drillBrowserName = Model.browserTabs(dayData, name, appNames).length > 0 ? name : "";
+        hoveredTabKey = "";
+    }
+    function hoverTab(index) {
+        if (index >= 0) closeDrill.stop();
+        hoveredTabKey = index >= 0 && index < drilledRows.length ? drilledRows[index].hoverKey : "";
+    }
+    Timer {
+        id: closeDrill
+        interval: 180
+        onTriggered: root.clearDrill()
+    }
+    onSelectedKeyChanged: clearDrill()
+    onViewChanged: if (view !== "day") clearDrill()
 
     // ---- Actions -----------------------------------------------------------
     function reset() {
@@ -158,7 +247,7 @@ Item {
         selectedKey = "";
         back = 0;
         showMore = false;
-        hoverIndex = -1;
+        clearDrill();
         settingsView.releaseFocus();
         view = "day";
         yearShown = 0;
@@ -240,6 +329,7 @@ Item {
         dailyGoalHours: root.dailyGoalHours
         idleMinutes: root.idleMinutes
         appLimits: root.appLimits
+        todayTabs: root.todayTabs
         trackProjects: root.trackProjects
         breakMinutes: root.breakMinutes
         ignoredApps: root.ignoredApps
@@ -448,7 +538,7 @@ Item {
             visible: root.fresh
             width: parent.width
             textFormat: Text.PlainText
-            text: "Nothing tracked yet. Time is counted while a window has focus."
+            text: "Nothing tracked yet. Time is counted while a window has focus. Add the optional browser extension to see time by site, such as youtube.com."
             wrapMode: Text.WordWrap
             color: root.dim
             font.family: root.fontFamily
@@ -630,15 +720,24 @@ Item {
                 id: donut
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                slices: root.coloredSlices
-                hovered: root.hoverIndex
+                slices: root.coloredExpandedSlices
+                hovered: root.hoveredDonutIndex
+                highlightedGroup: root.highlightedTabGroup
                 foreground: root.foreground
                 fontFamily: root.fontFamily
-                centerTitle: root.hoverIndex >= 0 && root.hoverIndex < root.slices.length ? root.slices[root.hoverIndex].name : Model.dayTitle(root.activeKey, root.todayKey)
-                centerValue: root.hoverIndex >= 0 && root.hoverIndex < root.slices.length ? Model.fmt(root.slices[root.hoverIndex].ms) : Model.fmt(root.dayData.total)
+                centerTitle: root.drillBrowserName !== "" ? (root.hoveredTabIndex >= 0 ? root.tabSlices[root.hoveredTabIndex].name : root.drillBrowserName) : (root.hoverIndex >= 0 && root.hoverIndex < root.slices.length ? root.slices[root.hoverIndex].name : Model.dayTitle(root.activeKey, root.todayKey))
+                centerValue: root.drillBrowserName !== "" ? Model.fmt(root.hoveredTabIndex >= 0 ? root.tabSlices[root.hoveredTabIndex].ms : root.drilledTotal) : (root.hoverIndex >= 0 && root.hoverIndex < root.slices.length ? Model.fmt(root.slices[root.hoverIndex].ms) : Model.fmt(root.dayData.total))
                 onHoverRequested: function (index) {
-                    root.hoverIndex = index;
+                    if (index < 0) {
+                        root.hoverTab(-1);
+                        return;
+                    }
+                    var slice = root.expandedSlices[index];
+                    if (slice.kind === "tab") root.hoverTab(slice.tabIndex);
+                    else root.focusApp(slice.appIndex, "");
                 }
+                onPointerEntered: closeDrill.stop()
+                onPointerLeft: root.scheduleClearDrill()
             }
 
             Column {
@@ -671,15 +770,38 @@ Item {
                         dimmed: root.hoverIndex >= 0 && root.hoverIndex !== index
                         foreground: root.foreground
                         fontFamily: root.fontFamily
-                        onHoverChanged: function (inside) {
-                            if (inside)
-                                root.hoverIndex = index;
-                            else if (root.hoverIndex === index)
-                                root.hoverIndex = -1;
-                        }
                     }
                 }
+
             }
+
+            // Keep the hover target outside the Column: an anchored child
+            // participates in Column positioning and collapses its rows.
+            MouseArea {
+                anchors.fill: legend
+                hoverEnabled: true
+                function selectAt(y) {
+                    var index = Math.floor(y / Style.space(26));
+                    if (index >= 0 && index < root.slices.length)
+                        root.focusApp(index, "");
+                }
+                onEntered: selectAt(mouseY)
+                onPositionChanged: function (mouse) { selectAt(mouse.y); }
+                onExited: root.scheduleClearDrill()
+            }
+        }
+
+        TabBreakdown {
+            visible: root.drillBrowserName !== "" && root.moreHoveredName === "" && rows.length > 0
+            browserName: root.drillBrowserName
+            rows: root.moreHoveredName === "" ? root.drilledRows : []
+            colors: root.tabColors
+            highlightedIndex: root.hoveredTabIndex
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onRowHoverRequested: function (index) { root.hoverTab(index); }
+            onAreaEntered: closeDrill.stop()
+            onAreaLeft: root.scheduleClearDrill()
         }
 
         // ---- Show more: every app, scrollable ------------------------------------
@@ -741,14 +863,27 @@ Item {
                         foreground: root.foreground
                         fontFamily: root.fontFamily
                         onHoverChanged: function (inside) {
-                            if (inside)
-                                root.hoverIndex = sliceIndex;
-                            else if (root.hoverIndex === sliceIndex)
-                                root.hoverIndex = -1;
+                            if (inside) {
+                                root.focusApp(sliceIndex, modelData.name);
+                            } else if (root.moreHoveredName === modelData.name)
+                                root.scheduleClearDrill();
                         }
                     }
                 }
             }
+        }
+
+        TabBreakdown {
+            visible: root.drillBrowserName !== "" && root.moreHoveredName !== "" && rows.length > 0
+            browserName: root.drillBrowserName
+            rows: root.moreHoveredName !== "" ? root.drilledRows : []
+            colors: root.tabColors
+            highlightedIndex: root.hoveredTabIndex
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onRowHoverRequested: function (index) { root.hoverTab(index); }
+            onAreaEntered: closeDrill.stop()
+            onAreaLeft: root.scheduleClearDrill()
         }
 
         // ---- Projects: terminal time per project folder (hidden when none) -------

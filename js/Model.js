@@ -12,7 +12,7 @@
 
 var KEEP_DAYS = 365
 // Shown in the settings menu. A test keeps it equal to manifest.json's version.
-var VERSION = "0.7.0"
+var VERSION = "0.8.0"
 
 function pad(n) {
   return n < 10 ? "0" + n : "" + n
@@ -88,6 +88,25 @@ function parseHistory(text) {
         d.projects[p] = Math.round(pms)
       }
     }
+    if (entry.tabs && typeof entry.tabs === "object" && !Array.isArray(entry.tabs)) {
+      for (var browser in entry.tabs) {
+        if (!d.apps[browser] || !isBrowserApp(browser)) continue
+        var sourceTabs = entry.tabs[browser]
+        if (!sourceTabs || typeof sourceTabs !== "object" || Array.isArray(sourceTabs)) continue
+        var left = d.apps[browser]
+        for (var tabId in sourceTabs) {
+          var sourceTab = sourceTabs[tabId]
+          if (!sourceTab || !validMs(sourceTab.ms) || !sourceTab.ms || left <= 0) continue
+          var amount = Math.min(left, Math.round(sourceTab.ms))
+          var host = siteEntry(tabId, sourceTab)
+          if (!host) continue
+          d.tabs = d.tabs || {}
+          d.tabs[browser] = d.tabs[browser] || {}
+          d.tabs[browser][tabId] = { ms: amount, host: host }
+          left -= amount
+        }
+      }
+    }
     days[key] = d
   }
   return { ok: true, days: days, archive: archive }
@@ -98,13 +117,13 @@ function serialize(days, archive) {
   var sorted = {}
   var source = archive || {}
   Object.keys(source).sort().forEach(function (k) { sorted[k] = source[k] })
-  return JSON.stringify({ version: 2, days: days, archive: sorted }, null, 2) + "\n"
+  return JSON.stringify({ version: 3, days: days, archive: sorted }, null, 2) + "\n"
 }
 
 // Returns a new history with `ms` added to `app` on day `key`. The input is
 // never mutated: QML bindings only re-evaluate when the property is replaced.
 // `project` (optional) also files the time under that project folder.
-function addTime(days, key, app, ms, project) {
+function addTime(days, key, app, ms, project, tab) {
   if (!app || !validMs(ms) || ms === 0) return days
   var next = Object.assign({}, days)
   var prev = days[key] || newDay()
@@ -115,6 +134,16 @@ function addTime(days, key, app, ms, project) {
     var projects = Object.assign({}, prev.projects)
     if (project) projects[project] = (projects[project] || 0) + ms
     next[key].projects = projects
+  }
+  if (prev.tabs || tab) {
+    var tabs = Object.assign({}, prev.tabs)
+    if (tab) {
+      var browserTabs = Object.assign({}, tabs[app])
+      var oldTab = browserTabs[tab.id]
+      browserTabs[tab.id] = { ms: (oldTab ? oldTab.ms : 0) + ms, host: tab.host }
+      tabs[app] = browserTabs
+    }
+    next[key].tabs = tabs
   }
   return next
 }
@@ -200,10 +229,79 @@ var BROWSER_ALIASES = {
   "zen-bin": "zen", "zen_browser": "zen", "zen": "zen", "app.zen_browser.zen": "zen",
   "firefox": "firefox", "librewolf": "librewolf", "waterfox": "waterfox",
   "tor-browser": "tor-browser", "mullvad-browser": "mullvad-browser",
-  "google-chrome": "google-chrome", "chrome": "google-chrome",
-  "chromium": "chromium", "brave": "brave", "brave-browser": "brave",
+  "google-chrome": "google-chrome", "google-chrome-stable": "google-chrome", "chrome": "google-chrome",
+  "chromium": "chromium", "chromium-browser": "chromium",
+  "brave": "brave", "brave-browser": "brave", "brave-browser-beta": "brave", "brave-browser-nightly": "brave",
   "vivaldi": "vivaldi", "vivaldi-stable": "vivaldi",
   "microsoft-edge": "microsoft-edge", "edge": "microsoft-edge"
+}
+
+function isBrowserApp(app) {
+  var canonical = canonicalApp(app)
+  for (var alias in BROWSER_ALIASES)
+    if (BROWSER_ALIASES[alias] === canonical) return true
+  return false
+}
+
+var CHROMIUM_APPS = { brave: 1, chromium: 1, "google-chrome": 1, vivaldi: 1, "microsoft-edge": 1 }
+function isChromiumApp(app) {
+  return !!CHROMIUM_APPS[canonicalApp(app)]
+}
+
+// Used only to match the extension's active tab to the focused window. Page
+// titles never become history labels; the extension supplies the hostname.
+function browserTabTitle(app, title) {
+  if (!isChromiumApp(app)) return ""
+  var name = String(title || "").replace(/[\u0000-\u001f\u007f]/g, " ").trim()
+  if (!name) return ""
+  var suffixes = {
+    brave: /\s[-–—]\sBrave(?: Browser| Nightly| Beta)?$/i,
+    chromium: /\s[-–—]\sChromium$/i,
+    "google-chrome": /\s[-–—]\sGoogle Chrome$/i,
+    vivaldi: /\s[-–—]\sVivaldi$/i,
+    "microsoft-edge": /\s[-–—]\sMicrosoft Edge$/i
+  }
+  var suffix = suffixes[canonicalApp(app)]
+  if (suffix) name = name.replace(suffix, "").trim()
+  return name.slice(0, 200)
+}
+
+function titleTabId(title) {
+  var value = title.toLowerCase()
+  var first = 2166136261
+  var second = 5381
+  for (var i = 0; i < value.length; i++) {
+    var code = value.charCodeAt(i)
+    first = Math.imul(first ^ code, 16777619)
+    second = Math.imul(second, 33) ^ code
+  }
+  return "title:" + (first >>> 0).toString(16) + ":" + (second >>> 0).toString(16)
+}
+
+function siteHost(value) {
+  var host = String(value || "").toLowerCase().replace(/^www\./, "")
+  if (host.length > 253 || !/^[a-z0-9.-]+$/.test(host)) return ""
+  var labels = host.split(".")
+  for (var i = 0; i < labels.length; i++)
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(labels[i])) return ""
+  return host
+}
+
+function siteEntry(tabId, entry) {
+  var host = entry && siteHost(entry.host)
+  return host && tabId === "site:" + host ? host : ""
+}
+
+function focusedBrowserTab(app, windowTitle, bridge, now) {
+  if (!isChromiumApp(app)) return null
+  var title = browserTabTitle(app, windowTitle)
+  if (!title) return null
+  var host = siteHost(bridge && bridge.host)
+  if (bridge && bridge.active === true && typeof bridge.at === "number" &&
+      now - bridge.at >= 0 && now - bridge.at < 30000 &&
+      host && bridge.titleKey === titleTabId(title))
+    return { id: "site:" + host, host: host }
+  return null
 }
 
 // Chromium "install as app" windows: chrome-<host>__<path>-<Profile>. The
@@ -247,6 +345,22 @@ function normalizeKeys(days) {
       day.total += days[key].apps[app]
     }
     if (days[key].projects) day.projects = days[key].projects
+    if (days[key].tabs) {
+      day.tabs = {}
+      for (var browser in days[key].tabs) {
+        var normalized = canonicalApp(browser)
+        if (!day.apps[normalized]) continue
+        day.tabs[normalized] = day.tabs[normalized] || {}
+        for (var tabId in days[key].tabs[browser]) {
+          var sourceTab = days[key].tabs[browser][tabId]
+          var oldTab = day.tabs[normalized][tabId]
+          day.tabs[normalized][tabId] = {
+            ms: (oldTab ? oldTab.ms : 0) + sourceTab.ms,
+            host: sourceTab.host
+          }
+        }
+      }
+    }
     out[key] = day
   }
   return out
@@ -317,18 +431,24 @@ function parseIdle(v) {
 
 // What was counted in the last `keepMs`, so it can be taken back once it turns
 // out the user had already walked away. Entries are { key, app, project, start,
-// end } (epoch ms; project "" = none); a stretch continuing the last entry
+// end, tab } (epoch ms; project/tab "" = none); a stretch continuing the last entry
 // extends it, so the list stays a few entries long. Returns a new list.
-function logRecent(log, key, app, start, end, keepMs, project) {
+function logRecent(log, key, app, start, end, keepMs, project, tab) {
   project = project || ""
+  tab = tab || null
   var out = []
   for (var i = 0; i < log.length; i++)
     if (log[i].end > end - keepMs) out.push(log[i])
   var last = out.length > 0 ? out[out.length - 1] : null
-  if (last && last.key === key && last.app === app && (last.project || "") === project && last.end === start)
-    out[out.length - 1] = { key: key, app: app, project: project, start: last.start, end: end }
-  else if (end > start)
-    out.push({ key: key, app: app, project: project, start: start, end: end })
+  if (last && last.key === key && last.app === app && (last.project || "") === project && (last.tab ? last.tab.id : "") === (tab ? tab.id : "") && last.end === start) {
+    var extended = { key: key, app: app, project: project, start: last.start, end: end }
+    if (tab) extended.tab = tab
+    out[out.length - 1] = extended
+  } else if (end > start) {
+    var entry = { key: key, app: app, project: project, start: start, end: end }
+    if (tab) entry.tab = tab
+    out.push(entry)
+  }
   return out
 }
 
@@ -354,6 +474,19 @@ function takeBack(days, log, since) {
         if (projects[e.project] <= 0) delete projects[e.project]
       }
       next[e.key].projects = projects
+    }
+    if (day.tabs) {
+      var tabs = Object.assign({}, day.tabs)
+      if (e.tab && tabs[e.app] && tabs[e.app][e.tab.id]) {
+        var browserTabs = Object.assign({}, tabs[e.app])
+        var oldTab = browserTabs[e.tab.id]
+        var remaining = oldTab.ms - Math.min(cut, oldTab.ms)
+        if (remaining > 0) browserTabs[e.tab.id] = { ms: remaining, host: oldTab.host }
+        else delete browserTabs[e.tab.id]
+        if (Object.keys(browserTabs).length) tabs[e.app] = browserTabs
+        else delete tabs[e.app]
+      }
+      if (Object.keys(tabs).length) next[e.key].tabs = tabs
     }
   }
   return next
@@ -396,7 +529,122 @@ function visibleDay(day, list, names) {
     out.total += day.apps[app]
   }
   if (day.projects) out.projects = day.projects
+  if (day.tabs) {
+    for (var browser in day.tabs) {
+      if (isIgnored(list, names, browser, browser)) continue
+      out.tabs = out.tabs || {}
+      out.tabs[browser] = day.tabs[browser]
+    }
+  }
   return out
+}
+
+// Site hostnames for a visible browser row, including unclassified browser
+// time from before this version or while the extension is unavailable.
+function browserTabs(day, rowName, names) {
+  if (!day || !day.apps) return []
+  var merged = {}
+  var unclassified = 0
+  var otherBrowser = 0
+  var hasChromium = false
+  for (var app in day.apps) {
+    if (!isBrowserApp(app) || displayLabel(app, names) !== rowName) continue
+    if (!isChromiumApp(app)) {
+      otherBrowser += day.apps[app]
+      continue
+    }
+    hasChromium = true
+    var accounted = 0
+    var tabs = day.tabs && day.tabs[app] ? day.tabs[app] : {}
+    for (var tabId in tabs) {
+      var sourceTab = tabs[tabId]
+      var host = siteEntry(tabId, sourceTab)
+      if (!host) continue
+      var previous = merged[tabId]
+      merged[tabId] = { id: tabId, title: host, ms: sourceTab.ms + (previous ? previous.ms : 0) }
+      accounted += sourceTab.ms
+    }
+    unclassified += Math.max(0, day.apps[app] - accounted)
+  }
+  if (!hasChromium || Object.keys(merged).length === 0) return []
+  var rows = Object.keys(merged).map(function (key) { return merged[key] })
+  if (unclassified) rows.push({ title: "Unclassified browser time", ms: unclassified, unknown: true })
+  if (otherBrowser) rows.push({ title: "Other browser time", ms: otherBrowser, unknown: true })
+  rows.sort(function (a, b) { return b.ms - a.ms || (a.title < b.title ? -1 : 1) })
+  return rows
+}
+
+// Preserve the browser row's site order in the ring.
+function tabDonutSlices(rows) {
+  var total = 0
+  for (var i = 0; i < rows.length; i++) total += rows[i].ms
+  var start = 0
+  return rows.map(function (row) {
+    var share = total > 0 ? row.ms / total : 0
+    var slice = {
+      key: row.hoverKey || row.id || row.title,
+      id: row.id || "",
+      name: row.title,
+      ms: row.ms,
+      share: share,
+      startFrac: start,
+      sweepFrac: share,
+      unknown: row.unknown === true
+    }
+    start += share
+    return slice
+  })
+}
+
+// Replace only the selected app's arc with its tab arcs. The rest of the day
+// keeps the same angles, including the unselected part of an "Other" arc.
+function expandedDonutSlices(appSlices, appIndex, rows) {
+  var out = []
+  for (var i = 0; i < appSlices.length; i++) {
+    var app = appSlices[i]
+    if (i !== appIndex || !rows.length || app.ms <= 0) {
+      out.push(Object.assign({}, app, { kind: "app", appIndex: i }))
+      continue
+    }
+    var used = 0
+    for (var j = 0; j < rows.length; j++) used += rows[j].ms
+    used = Math.min(used, app.ms)
+    var cursor = app.startFrac
+    for (var k = 0; k < rows.length; k++) {
+      var sweep = app.sweepFrac * rows[k].ms / app.ms
+      out.push({
+        kind: "tab", appIndex: i, tabIndex: k,
+        key: rows[k].hoverKey || rows[k].id || rows[k].title,
+        name: rows[k].title, ms: rows[k].ms,
+        share: sweep, startFrac: cursor, sweepFrac: sweep,
+        unknown: rows[k].unknown === true
+      })
+      cursor += sweep
+    }
+    if (app.ms > used)
+      out.push({
+        kind: "app", appIndex: i, name: app.name,
+        ms: app.ms - used, share: app.sweepFrac * (app.ms - used) / app.ms,
+        startFrac: cursor, sweepFrac: app.sweepFrac * (app.ms - used) / app.ms,
+        other: app.other
+      })
+  }
+  return out
+}
+
+function tabChoices(day, names) {
+  var rows = []
+  if (!day || !day.tabs) return rows
+  for (var app in day.tabs) {
+    if (!day.apps[app]) continue
+    for (var id in day.tabs[app]) {
+      var tab = day.tabs[app][id]
+      var host = siteEntry(id, tab)
+      if (host) rows.push({ id: host, title: host, browser: displayLabel(app, names), ms: tab.ms })
+    }
+  }
+  rows.sort(function (a, b) { return b.ms - a.ms || (a.title < b.title ? -1 : 1) })
+  return rows
 }
 
 // Project folders worked in from the terminal that day, most time first, each
@@ -496,15 +744,32 @@ function limitStatus(day, limits, names) {
   for (var name in limits || {}) {
     var used = 0
     var best = null
-    for (var app in apps) {
-      if (!isIgnored([name], names, app, app)) continue
-      used += apps[app]
-      if (best === null || apps[app] > apps[best]) best = app
+    var bestTitle = ""
+    var tabLimit = name.slice(0, 4) === "tab:"
+    var target = name.slice(4)
+    if (tabLimit) {
+      for (var browser in day && day.tabs ? day.tabs : {}) {
+        if (!apps[browser]) continue
+        for (var tabId in day.tabs[browser]) {
+          var tab = day.tabs[browser][tabId]
+          var host = siteEntry(tabId, tab)
+          if (host && (host === target || tabId.toLowerCase() === target)) {
+            used += tab.ms
+            bestTitle = host
+          }
+        }
+      }
+    } else {
+      for (var app in apps) {
+        if (!isIgnored([name], names, app, app)) continue
+        used += apps[app]
+        if (best === null || apps[app] > apps[best]) best = app
+      }
     }
     var limitMs = limits[name] * 60000
     out.push({
       name: name,
-      label: best !== null ? displayLabel(best, names) : displayLabel(name, names),
+      label: tabLimit ? "Site: " + (bestTitle || target) : (best !== null ? displayLabel(best, names) : displayLabel(name, names)),
       limitMs: limitMs,
       usedMs: used,
       leftMs: Math.max(0, limitMs - used),

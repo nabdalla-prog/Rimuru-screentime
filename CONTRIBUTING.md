@@ -22,6 +22,7 @@ Run `omarchy-shell rimuru.screentime status` and paste its one line into the iss
 | `qml/BarWidget.qml`, `qml/Panel.qml` | The bar button and the popup shell. |
 | `qml/Dashboard.qml`, `YearView.qml`, `SettingsView.qml`, `components/` | The popup's content. They don't depend on the shell, so they can be previewed on their own. |
 | `python/resolve_app.py` | Finds the command running in a terminal, and Steam titles. |
+| `browser-extension/`, `python/browser_tab_host.py` | Optional Chromium extension and local native messaging bridge for site hostnames. |
 | `tools/` | `preview.sh` renders the popup with made-up data. |
 
 ## Setting up

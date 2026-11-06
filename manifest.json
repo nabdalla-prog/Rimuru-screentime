@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "rimuru.screentime",
   "name": "Screen Time",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "author": "nabdalla",
-  "description": "Daily screen time per app in your Omarchy bar: sees what runs inside terminals, names Steam games, folds browsers and web apps. The popup has a donut chart, a 52-week trend, insights, a yearly overview that reaches back to your first day, a daily goal, a settings menu and an optional faint background picture. Fully local: nothing leaves your machine.",
+  "description": "Daily screen time per app in your Omarchy bar, with daily limits, terminal projects, Steam games, trends and a yearly overview. An optional browser extension adds focused site totals by domain, such as youtube.com. Fully local: nothing leaves your machine.",
   "kinds": [
     "service",
     "bar-widget"
@@ -80,7 +80,7 @@
         "type": "string",
         "label": "Daily app limits",
         "defaultValue": "",
-        "description": "app=duration pairs, comma-separated, e.g. youtube.com=1h, steam=45m."
+        "description": "app=duration pairs, comma-separated, e.g. brave=1h, tab:youtube.com=45m."
       },
       {
         "key": "breakMinutes",

@@ -28,6 +28,8 @@ Fully local: it reads which window is focused, adds up the time, and saves it to
 omarchy plugin add https://github.com/nabdalla-prog/Rimuru-screentime.git --enable
 ```
 
+To see focused Chromium time by domain, such as `youtube.com`, set up the optional [browser extension](browser-extension/README.md). Browser time still counts without it, but has no site breakdown.
+
 **Update:**
 
 ```bash
@@ -51,7 +53,7 @@ That removes the plugin and its bar entry. Your history stays in `~/.local/share
 
 **In the popup:**
 
-- **Donut and list:** the biggest six apps plus "Other" (apps under 3% are folded into it). Hover a slice or a row to spotlight it. *Show more* lists every app that's in "Other".
+- **Donut and list:** the biggest six apps plus "Other" (apps under 3% are folded into it). Hover a slice or a row to spotlight it. Hover a Chromium browser to split the ring by site domain; hover a site below to highlight its segment. *Show more* lists every app that's in "Other".
 - **Week trend:** one Monday-to-Sunday page at a time, with the date range and ISO week number (`Aug 31 – Sep 6, 2026 · W36`). The arrows or the mouse wheel page back through up to 52 weeks, as far as your history goes. Click a day to inspect it (the donut, total and insights follow), then click it again, or *Back to today*, to return. Click the week's total to flip between time and its share of the week's 168 hours. A ★ marks your busiest week ever.
 - **Insights:** the day's top app, how it compares with the day before, and the busiest day of the week on screen.
 - **Yearly overview:** click *Year ›* (or the hourglass) for a bar per month and a set of highlights for that year, with arrows to go back through every recorded year:
@@ -80,11 +82,11 @@ That removes the plugin and its bar entry. Your history stays in `~/.local/share
 - Time is counted per app once per second while its window has focus.
 - **Terminals** are filed under the command running in them (`nvim`, `btop`, `claude`), not the terminal's name, and follow along as you start and stop commands. A bare shell prompt counts as "Terminal". If a terminal has several tabs, the window title is used to pick the right one.
 - **Steam games** show their title instead of `steam_app_730`. Non-Steam shortcuts such as Battle.net use the window title.
-- **Browsers** are folded to one name (`brave-browser` and `brave` are both "Brave"), and **Chromium web apps** ("install as app") are filed under their site, the same across profiles.
+- **Browsers** are folded to one name (`brave-browser` and `brave` are both "Brave"), and **Chromium web apps** ("install as app") are filed under their site, the same across profiles. With the [optional Chromium companion](browser-extension/README.md), focused time in Brave, Chromium, Chrome, Vivaldi and Edge is grouped by hostname (`youtube.com`, `github.com`) under the browser total. Page titles and URL paths are not stored. Without the companion, browser time has no site breakdown.
 - Nothing is counted while the session is locked, while the screensaver or a desktop portal dialog has focus, when no window has focus, for apps you ignore, or while the machine is asleep. Time that crosses midnight is split between the two days.
 - **Idle:** after 5 minutes without keyboard or mouse input (adjustable, or off) counting stops until you're back, and those 5 waiting minutes are taken back too, since nobody was there. Apps that keep the screen awake, like a playing video or a call, hold this off, so watching something still counts.
 
-History is stored at `~/.local/share/omarchy-screentime/history.json`. The last 365 days are kept in full (time per app). Older days are rolled into an archive that keeps just each day's total, forever, so the yearly overview can always go back to your first day. Only the per-app breakdown of old days is forgotten. Ignoring an app hides its time on recent days but can't be applied to archived days, which are totals only. Delete the file to reset. If the file ever becomes unreadable, a copy is kept next to it as `history.json.corrupt-<timestamp>` and tracking starts fresh.
+History is stored at `~/.local/share/omarchy-screentime/history.json`. The last 365 days are kept in full (time per app, plus site and project detail where available). Older days are rolled into an archive that keeps just each day's total, forever, so the yearly overview can always go back to your first day. Ignoring an app hides its time on recent days but can't be applied to archived days, which are totals only. Delete the file to reset. If the file ever becomes unreadable, a copy is kept next to it as `history.json.corrupt-<timestamp>` and tracking starts fresh.
 
 ## Settings
 
@@ -100,7 +102,7 @@ Open the menu with the gear in the popup, the `c` key, or `omarchy-shell rimuru.
   - *Projects in the terminal* (on by default): time in a terminal is also filed under the project folder the command is working in, and the popup lists the day's top projects (shown only when there are some). A project is the nearest folder above the working directory, inside your home folder, that holds `.git`, `.hg`, `package.json`, `pyproject.toml`, `Cargo.toml` or `go.mod`. Only the folder's name is stored, never its path.
   - *Ignored apps* are never counted and their past time is hidden. The apps you've used today are listed as chips: tap one to ignore it, or type a name and press Enter.
   - *Custom names* rename an app in the popup. Apps given the same name are merged into one row.
-  - *Daily limits* give an app a time budget for the day (type the app and a time such as `1h`, `45m` or `1h30`, then Add). When it is reached you get one desktop notification, the bar turns the theme's urgent colour, and the popup lists each limit with the time left. Names match like ignored apps, so a custom name covers every app that shares it. Until you set one, the popup shows a small tip offering a one-tap limit (30m, 1h, 2h) for today's most used app once it has 15 minutes; the × hides it for good.
+  - *Daily limits* give an app or site domain a time budget for the day (type the app or `tab:youtube.com` and a time such as `1h`, `45m` or `1h30`, then Add). Pick a site chip to fill in its domain. When a limit is reached you get one desktop notification, the bar turns the theme's urgent colour, and the popup lists each limit with the time left. These limits remind you; they do not close or block a site. App names match like ignored apps, so a custom name covers every app that shares it. Until you set one, the popup shows a small tip offering a one-tap limit (30m, 1h, 2h) for today's most used app once it has 15 minutes; the × hides it for good.
 - **Danger zone:** *Reset today* (three clicks: RESET, SURE?, REALLY?) clears only today. *Wipe all history* (four clicks) erases every day including the archive, with no undo. Waiting a few seconds or moving off the button starts over.
 
 The same settings can be changed from the terminal:
@@ -108,8 +110,9 @@ The same settings can be changed from the terminal:
 ```bash
 omarchy-shell rimuru.screentime goal 6              # daily goal in hours, 0 = off
 omarchy-shell rimuru.screentime idle 10             # stop counting after 10 minutes without input, 0 = off
-omarchy-shell rimuru.screentime limit youtube.com 1h  # daily limit for an app (45m, 1h30 ...)
-omarchy-shell rimuru.screentime limit youtube.com 0   # remove it
+omarchy-shell rimuru.screentime limit brave 1h       # daily limit for an app (45m, 1h30 ...)
+omarchy-shell rimuru.screentime limit brave 0        # remove it
+omarchy-shell rimuru.screentime limit 'tab:youtube.com' 45m # site domain limit
 omarchy-shell rimuru.screentime limits              # today's limits and how much is used
 omarchy-shell rimuru.screentime breaks 60           # break reminder after 60 minutes, 0 = off
 omarchy-shell rimuru.screentime projects            # today's time per terminal project
@@ -155,7 +158,7 @@ The plugin follows your Omarchy theme: colours, fonts and the danger colour come
 
 Nothing leaves your computer: there is no network code, no account and no telemetry. History and settings are plain files you can read and delete.
 
-Omarchy plugins run inside the shell with your user's permissions and are not sandboxed, so read the code before you install any of them. This one is small: `js/Model.js` (pure logic), `qml/Service.qml` (tracking and saving), `qml/BarWidget.qml`, `qml/Panel.qml`, `qml/Dashboard.qml`, `qml/YearView.qml`, `qml/SettingsView.qml` and `qml/components/` (UI) and `python/resolve_app.py` (looks up the terminal command or Steam title; it only reads `/proc`, `hyprctl activewindow` and Steam's `appmanifest` files, and writes nothing). The other commands it runs are `mkdir -p` and `cp` on its own data folder, `omarchy-shell lock isLocked` to see whether the screen is locked, and `notify-send` when an app reaches a daily limit you set or a break reminder is due. To find a terminal's project it reads the working directory of the terminal's foreground process (`/proc/<pid>/cwd`) and checks whether marker files exist above it; only the project folder's name is saved. It only ever writes to its own data folder and to its own entry in `~/.config/omarchy/shell.json`, and only when you change a setting. To report a security problem see [SECURITY.md](SECURITY.md).
+Omarchy plugins run inside the shell with your user's permissions and are not sandboxed, so read the code before you install any of them. This one contains `js/Model.js` (pure logic), `qml/Service.qml` (tracking and saving), the QML popup files, and `python/resolve_app.py` (terminal command and Steam title lookup; it only reads `/proc`, `hyprctl activewindow` and Steam's `appmanifest` files). The service runs `mkdir -p` and `cp` on its own data folder, `omarchy-shell lock isLocked`, and `notify-send` for limits and break reminders. To find a terminal's project it reads `/proc/<pid>/cwd` and checks for project marker files; only the folder name is saved. The optional Chromium companion uses `browser-extension/background.js` and `python/browser_tab_host.py` to send the active site's hostname and a temporary title hash to a local file in that same data folder. History keeps only the hostname and time. Its installer writes one native messaging manifest in the selected browser's user config directory. The plugin also writes its own entry in `~/.config/omarchy/shell.json` when you change a setting. To report a security problem see [SECURITY.md](SECURITY.md).
 
 ## Troubleshooting
 

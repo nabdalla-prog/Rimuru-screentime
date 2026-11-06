@@ -12,6 +12,7 @@ Item {
 
     property var slices: []
     property int hovered: -1
+    property var highlightedGroup: []
     property color foreground: Color.foreground
     property string fontFamily: Style.font.family
     // Centre text: shown for the whole day, or for the hovered slice.
@@ -20,6 +21,8 @@ Item {
 
     // The pointer moved over a slice, or off the ring (-1).
     signal hoverRequested(int index)
+    signal pointerEntered
+    signal pointerLeft
 
     readonly property real ring: Style.space(16)
     readonly property real radius: (Math.min(width, height) - ring - Style.space(6)) / 2
@@ -65,7 +68,8 @@ Item {
             required property int index
             anchors.fill: parent
             preferredRendererType: Shape.CurveRenderer
-            opacity: root.hovered < 0 || root.hovered === index ? 1 : 0.35
+            opacity: root.hovered >= 0 ? (root.hovered === index ? 1 : 0.35)
+                       : (root.highlightedGroup.length === 0 || root.highlightedGroup.indexOf(index) >= 0 ? 1 : 0.35)
             Behavior on opacity {
                 NumberAnimation {
                     duration: 120
@@ -125,9 +129,13 @@ Item {
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true
+        onEntered: root.pointerEntered()
         onPositionChanged: function (mouse) {
             root.hoverRequested(root.sliceAt(mouse.x, mouse.y));
         }
-        onExited: root.hoverRequested(-1)
+        onExited: {
+            root.hoverRequested(-1);
+            root.pointerLeft();
+        }
     }
 }

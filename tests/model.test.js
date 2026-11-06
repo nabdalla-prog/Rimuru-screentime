@@ -214,7 +214,8 @@ test("canonicalApp: Chromium web apps fold to their host across profiles", () =>
   assert.equal(M.canonicalApp("brave-app.slack.com"), "web:app.slack.com")
   // Plain browser classes are not web apps.
   assert.equal(M.canonicalApp("brave-browser"), "brave")
-  assert.equal(M.canonicalApp("chromium-browser"), "chromium-browser")
+  assert.equal(M.canonicalApp("chromium-browser"), "chromium")
+  assert.equal(M.canonicalApp("brave-browser-nightly"), "brave")
 })
 
 test("parseList accepts arrays and strings, lowercases and de-duplicates", () => {
@@ -535,12 +536,12 @@ test("parseHistory reads the archive, drops bad entries, and old files have none
   assert.equal(M.parseHistory('{"archive": null}').ok, false)
 })
 
-test("serialize writes version 2 with a sorted archive and round-trips", () => {
+test("serialize writes version 3 with a sorted archive and round-trips", () => {
   const days = M.addTime({}, "2026-09-20", "foot", 5000)
   const archive = { "2025-03-02": 200, "2024-12-31": 100 }
   const text = M.serialize(days, archive)
   const parsed = JSON.parse(text)
-  assert.equal(parsed.version, 2)
+  assert.equal(parsed.version, 3)
   deepEqual(Object.keys(parsed.archive), ["2024-12-31", "2025-03-02"])
   const back = M.parseHistory(text)
   deepEqual(back.days, days)
@@ -1032,6 +1033,140 @@ test("logRecent keeps different projects apart", () => {
   let log = M.logRecent([], "d", "nvim", 0, 1000, 60000, "a")
   log = M.logRecent(log, "d", "nvim", 1000, 2000, 60000, "b")
   assert.equal(log.length, 2)
+})
+
+test("Chromium site detection requires a fresh matching hostname from the extension", () => {
+  const now = 20000
+  deepEqual(M.focusedBrowserTab("brave-browser", "Docs - Brave", {
+    active: true, at: 19000, host: "www.github.com", titleKey: M.titleTabId("Docs")
+  }, now), { id: "site:github.com", host: "github.com" })
+  deepEqual(M.focusedBrowserTab("brave", "Docs - Brave", {
+    active: true, at: -10000, host: "github.com", titleKey: M.titleTabId("Docs")
+  }, now), null)
+  assert.equal(M.focusedBrowserTab("brave", "Docs - Brave", {
+    active: true, at: -9999, host: "github.com", titleKey: M.titleTabId("Docs")
+  }, now).host, "github.com")
+  deepEqual(M.focusedBrowserTab("brave", "Docs - Brave", {
+    active: true, at: 19000, host: "github.com", titleKey: M.titleTabId("Other")
+  }, now), null)
+  deepEqual(M.focusedBrowserTab("chromium", "Docs - Chromium", {}, now), null)
+  assert.equal(M.titleTabId("Docs"), M.titleTabId("docs"))
+  assert.equal(M.siteHost("WWW.YouTube.COM"), "youtube.com")
+  assert.equal(M.siteHost("youtube.com/watch"), "")
+  assert.equal(M.focusedBrowserTab("firefox", "Docs - Mozilla Firefox", {}, now), null)
+  assert.equal(M.focusedBrowserTab("chrome-example.com", "Docs", {}, now), null)
+})
+
+test("extension sends a hostname and title hash, never the page title or URL", async () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "browser-extension", "background.js"), "utf8")
+  const event = { addListener() {} }
+  const messages = []
+  const chrome = {
+    tabs: { onActivated: event, onUpdated: event, onRemoved: event, query: async () => [{ title: "Private issue title", url: "https://www.github.com/user/private/issues/1" }] },
+    windows: { WINDOW_ID_NONE: -1, onFocusChanged: event, onRemoved: event, getLastFocused: async () => ({ focused: true, id: 4 }) },
+    runtime: { onStartup: event, onInstalled: event, connectNative: () => ({ onDisconnect: event, postMessage: (message) => messages.push(message) }) },
+    action: { setBadgeText() {}, setTitle() {} }
+  }
+  const extension = vm.createContext({ chrome, URL, setInterval() {} })
+  vm.runInContext(source, extension)
+  assert.equal(extension.titleKey("Docs"), M.titleTabId("Docs"))
+  assert.equal(extension.titleKey(" A\u0000B "), M.titleTabId("A B"))
+  assert.equal(extension.siteHost("https://www.youtube.com/watch?v=123"), "youtube.com")
+  assert.equal(extension.siteHost("https://github.com/user/repo"), "github.com")
+  assert.equal(extension.siteHost("chrome://settings"), "")
+  await extension.report()
+  deepEqual(messages.at(-1), { active: true, host: "github.com", titleKey: M.titleTabId("Private issue title") })
+  assert.equal(M.focusedBrowserTab("brave", "Private issue title - Brave", { ...messages.at(-1), at: 19000 }, 20000).host, "github.com")
+})
+
+test("site time groups all pages on one host and limits use the domain", () => {
+  const first = { id: "site:github.com", host: "github.com" }
+  const second = { id: "site:youtube.com", host: "youtube.com" }
+  const key = "2026-10-27"
+  let days = M.addTime({}, key, "brave", 90000, "", first)
+  days = M.addTime(days, key, "brave", 60000, "", second)
+  days = M.addTime(days, key, "brave", 30000, "", first)
+  assert.equal(days[key].total, 180000)
+  assert.equal(days[key].apps.brave, 180000)
+  deepEqual(M.browserTabs(days[key], "Brave", {}), [
+    { id: "site:github.com", title: "github.com", ms: 120000 },
+    { id: "site:youtube.com", title: "youtube.com", ms: 60000 }
+  ])
+  deepEqual(M.tabChoices(days[key], {}).map((r) => r.id), ["github.com", "youtube.com"])
+  deepEqual(M.parseHistory(M.serialize(days)).days, days)
+  assert.equal(M.limitStatus(days[key], { "tab:github.com": 2 }, {})[0].over, true)
+  assert.equal(M.limitStatus(days[key], { "tab:github.com": 2 }, {})[0].usedMs, 120000)
+})
+
+test("merged browser names show one row per domain", () => {
+  const day = {
+    total: 180000,
+    apps: { brave: 120000, chromium: 60000 },
+    tabs: {
+      brave: { "site:github.com": { host: "github.com", ms: 120000 } },
+      chromium: { "site:github.com": { host: "github.com", ms: 60000 } }
+    }
+  }
+  deepEqual(M.browserTabs(day, "Browser", { brave: "Browser", chromium: "Browser" }), [
+    { id: "site:github.com", title: "github.com", ms: 180000 }
+  ])
+  assert.equal(M.limitStatus(day, { "tab:github.com": 2 }, {})[0].usedMs, 180000)
+})
+
+test("tab donut slices map one-to-one to site rows", () => {
+  const rows = [
+    { id: "site:github.com", title: "github.com", ms: 60000 },
+    { id: "site:youtube.com", title: "youtube.com", ms: 30000 },
+    { title: "Unclassified browser time", ms: 10000, unknown: true }
+  ]
+  const slices = M.tabDonutSlices(rows)
+  deepEqual(slices.map((s) => s.id), ["site:github.com", "site:youtube.com", ""])
+  deepEqual(slices.map((s) => s.ms), [60000, 30000, 10000])
+  assert.equal(slices[0].share, 0.6)
+  assert.equal(slices[1].startFrac, 0.6)
+  assert.ok(Math.abs(slices[2].startFrac + slices[2].sweepFrac - 1) < 1e-12)
+  assert.equal(slices[2].unknown, true)
+  deepEqual(M.tabDonutSlices([]), [])
+})
+
+test("expanded donut splits only the browser arc and preserves the other app angles", () => {
+  const apps = M.donutSlices({ total: 100, apps: { codex: 50, brave: 30, terminal: 20 } }, {}, 6, 0)
+  const expanded = M.expandedDonutSlices(apps, 1, [
+    { id: "site:github.com", title: "github.com", ms: 20 },
+    { id: "site:youtube.com", title: "youtube.com", ms: 10 }
+  ])
+  deepEqual(expanded.map((s) => s.kind), ["app", "tab", "tab", "app"])
+  assert.equal(expanded[0].startFrac, apps[0].startFrac)
+  assert.equal(expanded[0].sweepFrac, apps[0].sweepFrac)
+  assert.equal(expanded[1].startFrac, apps[1].startFrac)
+  assert.equal(expanded[1].sweepFrac, 0.2)
+  assert.equal(expanded[2].sweepFrac, 0.1)
+  assert.equal(expanded[3].startFrac, apps[2].startFrac)
+  assert.equal(expanded[3].sweepFrac, apps[2].sweepFrac)
+  deepEqual(M.expandedDonutSlices(apps, -1, []).map((s) => s.kind), ["app", "app", "app"])
+})
+
+test("idle rollback, ignored browsers, and older history keep tab detail consistent", () => {
+  const tab = { id: "site:youtube.com", host: "youtube.com" }
+  const days = M.addTime({}, "d", "brave", 120000, "", tab)
+  const log = M.logRecent([], "d", "brave", 0, 120000, 300000, "", tab)
+  const rolled = M.takeBack(days, log, 60000)
+  assert.equal(rolled.d.tabs.brave[tab.id].ms, 60000)
+  assert.equal(rolled.d.apps.brave, 60000)
+  deepEqual(M.visibleDay(days.d, ["brave"], {}), { total: 0, apps: {} })
+  const old = { total: 120000, apps: { brave: 120000 } }
+  deepEqual(M.browserTabs(old, "Brave", {}), [])
+  const mixed = { total: 180000, apps: { brave: 120000, firefox: 60000 }, tabs: { brave: { "site:github.com": { ms: 120000, host: "github.com" } } } }
+  deepEqual(M.browserTabs(mixed, "Browser", { brave: "Browser", firefox: "Browser" }), [
+    { id: "site:github.com", title: "github.com", ms: 120000 },
+    { title: "Other browser time", ms: 60000, unknown: true }
+  ])
+  deepEqual(M.browserTabs({ total: 60000, apps: { firefox: 60000 } }, "Firefox", {}), [])
+  const parsed = M.parseHistory(JSON.stringify({ days: { d: { apps: { brave: 5000 }, tabs: { brave: { "site:github.com": { ms: 9000, host: "github.com" } } } } } }))
+  // Bad day keys are dropped, and tab time is capped at the app total.
+  deepEqual(parsed.days, {})
+  const valid = M.parseHistory(JSON.stringify({ days: { "2026-10-27": { apps: { brave: 5000 }, tabs: { brave: { "site:github.com": { ms: 9000, host: "github.com" } } } } } }))
+  assert.equal(valid.days["2026-10-27"].tabs.brave["site:github.com"].ms, 5000)
 })
 
 test("topProjects lists projects with at least a minute, most first", () => {

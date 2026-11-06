@@ -30,7 +30,7 @@ Item {
     // running service, which the shell keeps loaded, is still the old one) the
     // UI tells the user to restart the shell. Bump it in both files whenever
     // what the UI reads from or calls on the service changes.
-    readonly property int apiLevel: 7
+    readonly property int apiLevel: 8
 
     // ---- Update notice -----------------------------------------------------
     // The shell keeps this plugin loaded, so after an update (new files on disk)
@@ -61,6 +61,7 @@ Item {
 
     readonly property string dataDir: Quickshell.env("HOME") + "/.local/share/omarchy-screentime"
     readonly property string historyPath: dataDir + "/history.json"
+    readonly property string browserTabPath: dataDir + "/browser-tab.json"
     readonly property string resolverPath: {
         var u = Qt.resolvedUrl("../python/resolve_app.py").toString();
         return u.startsWith("file://") ? u.slice(7) : u;
@@ -141,6 +142,24 @@ Item {
     // The compositor's class for the focused window, e.g. "brave-browser".
     readonly property string rawApp: activeWindow && activeWindow.appId ? String(activeWindow.appId) : ""
     readonly property string focusedTitle: activeWindow && activeWindow.title ? String(activeWindow.title) : ""
+    property var browserTabState: ({})
+    FileView {
+        id: browserTabFile
+        path: root.browserTabPath
+        printErrors: false
+        watchChanges: true
+        onLoaded: {
+            try { root.browserTabState = JSON.parse(text()); }
+            catch (e) { root.browserTabState = ({}); }
+        }
+        onLoadFailed: root.browserTabState = ({})
+    }
+    Timer {
+        interval: 2000
+        repeat: true
+        running: root.ready
+        onTriggered: browserTabFile.reload()
+    }
     // What the resolver found for the focused terminal or game ("" = nothing).
     property string resolvedName: ""
     // The project folder the terminal's command works in ("" = none).
@@ -259,13 +278,14 @@ Item {
         }
         var app = focusedApp;
         var project = trackProjects && isTerminal ? resolvedProject : "";
+        var tab = Model.focusedBrowserTab(app, focusedTitle, browserTabState, now);
         var next = days;
         var log = recent;
         var at = from;
         var parts = Model.splitByDay(from, now);
         for (var i = 0; i < parts.length; i++) {
-            next = Model.addTime(next, parts[i].key, app, parts[i].ms, project);
-            log = Model.logRecent(log, parts[i].key, app, at, at + parts[i].ms, idleMs, project);
+            next = Model.addTime(next, parts[i].key, app, parts[i].ms, project, tab);
+            log = Model.logRecent(log, parts[i].key, app, at, at + parts[i].ms, idleMs, project, tab);
             at += parts[i].ms;
         }
         days = next;
