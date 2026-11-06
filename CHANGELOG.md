@@ -5,7 +5,7 @@ All notable changes to this plugin. Versions follow `manifest.json`; each is a t
 ## [0.8.0] - 2026-11-05
 
 ### Added
-- Focused Chromium site time under each browser's app total. Hover a browser in the popup to see domains such as `youtube.com`. The optional Chromium companion extension supplies the hostname; page titles are not stored.
+- Focused Chromium site time under each browser's app total. Hover a browser in the popup to see domains such as `youtube.com`. The optional Chromium companion extension supplies the hostname; page titles are not stored. (#1, thanks Abdy)
 - Daily site limits through the existing limit setting (`tab:youtube.com`). They use the existing one-per-day notification and urgent bar colour.
 - The first-run hint and install instructions explain optional browser extension tracking.
 
@@ -18,6 +18,7 @@ All notable changes to this plugin. Versions follow `manifest.json`; each is a t
 - Screen-time history is now private to your user: its folder is `0700` and `history.json` `0600`, including folders and files left readable by everyone by older releases (fixed on the next start). The history lists the apps and, with the extension, the sites you use, so other accounts on the same machine should not be able to read it.
 
 ### Fixed
+- The bar widget and popup show your data under replacement bars whose shell doesn't hand widgets the tracking service directly; before, they stayed empty while tracking kept running (#2, thanks Nitai).
 - The app legend rows no longer overlap when the stable hover target is active.
 - Hovering a browser splits only its app slice into tab slices; the other apps retain their positions and proportions.
 - Legend selection stays stable while the history refreshes under a stationary cursor.
