@@ -1,3 +1,6 @@
+//@ pragma OmarchyLoadPatch
+// Like Omarchy's own shell.qml: without this, Qt 6.12+ resolves a bare `Color` to
+// QtQuick's type instead of the theme in qs.Commons, and previews lose the theme.
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
