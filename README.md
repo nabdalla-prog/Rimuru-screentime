@@ -30,6 +30,10 @@ omarchy plugin add https://github.com/nabdalla-prog/Rimuru-screentime.git --enab
 
 To see focused Chromium time by domain, such as `youtube.com`, set up the optional [browser extension](browser-extension/README.md). Browser time still counts without it, but has no site breakdown.
 
+<p align="center">
+  <img src="docs/sites.png" alt="Hovering Brave in the popup splits its time by site: github.com, youtube.com and unclassified browser time" width="360">
+</p>
+
 **Update:**
 
 ```bash
@@ -158,7 +162,7 @@ The plugin follows your Omarchy theme: colours, fonts and the danger colour come
 
 Nothing leaves your computer: there is no network code, no account and no telemetry. History and settings are plain files you can read and delete.
 
-Omarchy plugins run inside the shell with your user's permissions and are not sandboxed, so read the code before you install any of them. This one contains `js/Model.js` (pure logic), `qml/Service.qml` (tracking and saving), the QML popup files, and `python/resolve_app.py` (terminal command and Steam title lookup; it only reads `/proc`, `hyprctl activewindow` and Steam's `appmanifest` files). The service runs `mkdir -p` and `cp` on its own data folder, `omarchy-shell lock isLocked`, and `notify-send` for limits and break reminders. To find a terminal's project it reads `/proc/<pid>/cwd` and checks for project marker files; only the folder name is saved. The optional Chromium companion uses `browser-extension/background.js` and `python/browser_tab_host.py` to send the active site's hostname and a temporary title hash to a local file in that same data folder. History keeps only the hostname and time. Its installer writes one native messaging manifest in the selected browser's user config directory. The plugin also writes its own entry in `~/.config/omarchy/shell.json` when you change a setting. To report a security problem see [SECURITY.md](SECURITY.md).
+Omarchy plugins run inside the shell with your user's permissions and are not sandboxed, so read the code before you install any of them. This one contains `js/Model.js` (pure logic), `qml/Service.qml` (tracking and saving), the QML popup files, and `python/resolve_app.py` (terminal command and Steam title lookup; it only reads `/proc`, `hyprctl activewindow` and Steam's `appmanifest` files). The service runs `mkdir -p`, `chmod` (to keep it private) and `cp` on its own data folder, `omarchy-shell lock isLocked`, and `notify-send` for limits and break reminders. To find a terminal's project it reads `/proc/<pid>/cwd` and checks for project marker files; only the folder name is saved. The optional Chromium companion uses `browser-extension/background.js` and `python/browser_tab_host.py` to send the active site's hostname and a temporary title hash to a local file in that same data folder. History keeps only the hostname and time. Its installer writes one native messaging manifest in the selected browser's user config directory. The plugin also writes its own entry in `~/.config/omarchy/shell.json` when you change a setting. To report a security problem see [SECURITY.md](SECURITY.md).
 
 ## Troubleshooting
 
