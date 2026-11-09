@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Keeps the SHA-pinned actions in ci.yml current. The plugin itself has no
+  # package dependencies.
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

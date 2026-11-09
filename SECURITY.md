@@ -16,7 +16,7 @@ Omarchy plugins run inside the shell with your user's permissions and are not sa
 
 - makes **no network requests** and contains no telemetry;
 - reads the focused window's class through Quickshell, and `/proc`, `hyprctl activewindow` and Steam `appmanifest` files (in `python/resolve_app.py`, which writes nothing);
-- runs only `mkdir -p` and `cp` on its own data folder (`~/.local/share/omarchy-screentime/`), `omarchy-shell lock isLocked` and `python3`;
+- runs only `mkdir -p`, `chmod` (to keep it readable only by the user) and `cp` on its own data folder (`~/.local/share/omarchy-screentime/`), `omarchy-shell lock isLocked`, `notify-send` for limits and break reminders, and `python3`;
 - writes its own history file there automatically and updates its own entry in `~/.config/omarchy/shell.json` when the user changes a setting;
 - never runs `sudo`, installs anything, or executes downloaded code.
 
