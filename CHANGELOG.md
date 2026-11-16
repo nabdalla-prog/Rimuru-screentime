@@ -2,6 +2,14 @@
 
 All notable changes to this plugin. Versions follow `manifest.json`; each is a tagged release on GitHub.
 
+## [0.8.1] - 2026-11-16
+
+### Security
+- The text fields in Settings no longer read the clipboard on their own. An editable Qt text field reads the whole clipboard whenever it changes, even while Settings is closed, so a program that owns the clipboard could stall or exhaust the shell by streaming endless text. The fields are now read-only to Qt and handle typing themselves; the clipboard is read only when you press the paste shortcut. Found in the marketplace review of 0.8.0.
+
+### Changed
+- Because of the above, the Settings text fields have no undo and no input-method composition, and middle-click paste is off. Typing, selection, copy, cut and paste work as before.
+
 ## [0.8.0] - 2026-11-05
 
 ### Added

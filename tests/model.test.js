@@ -1222,3 +1222,20 @@ test("the service and bar widget share the sibling replacement-bar bridge", () =
     assert.match(source, /import "Bridge\.js" as Bridge/)
   }
 })
+
+test("no text field reads the clipboard on its own", () => {
+  // An editable TextInput/TextEdit reads the whole clipboard whenever it
+  // changes. TextBox.qml is the one place a field may exist, and it must stay
+  // read-only except inside its explicit paste.
+  const dir = path.join(__dirname, "..", "qml")
+  const files = fs.readdirSync(dir, { recursive: true }).filter((f) => f.endsWith(".qml"))
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(dir, file), "utf8").replace(/\/\/.*$/gm, "")
+    if (file === path.join("components", "TextBox.qml")) {
+      assert.match(source, /TextInput\s*\{[^}]*\breadOnly: true\b/, "TextBox.qml keeps its TextInput read-only")
+      assert.equal(source.match(/readOnly = false/g).length, 1, "only pasteNow() makes it editable")
+      continue
+    }
+    assert.doesNotMatch(source, /\b(TextInput|TextEdit|TextField|TextArea)\s*\{/, `${file} uses TextBox instead`)
+  }
+})
