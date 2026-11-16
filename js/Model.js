@@ -12,7 +12,7 @@
 
 var KEEP_DAYS = 365
 // Shown in the settings menu. A test keeps it equal to manifest.json's version.
-var VERSION = "0.8.1"
+var VERSION = "0.8.2"
 
 function pad(n) {
   return n < 10 ? "0" + n : "" + n

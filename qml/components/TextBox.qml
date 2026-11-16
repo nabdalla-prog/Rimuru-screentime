@@ -56,6 +56,13 @@ Rectangle {
         font.pixelSize: Style.font.body
         readOnly: true
         cursorVisible: activeFocus
+        // Qt doesn't draw its own cursor in a read-only field, so this is it.
+        // TextInput places it and sets its height.
+        cursorDelegate: Rectangle {
+            width: 1
+            color: root.foreground
+            visible: input.activeFocus
+        }
 
         // Replaces the selection (if any) with `s`. insert() honours
         // maximumLength.

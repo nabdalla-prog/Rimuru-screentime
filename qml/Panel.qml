@@ -191,11 +191,14 @@ Panel {
                         if (root.service && typeof root.service.resetAll === "function")
                             root.service.resetAll();
                     }
-                    // Typing ended: give the keys back to the popup.
-                    onEditingChanged: {
-                        if (!editing)
+                    // Typing ended: give the keys back to the popup. Checked
+                    // a moment later, because Enter in one field hands focus to
+                    // the next and `editing` is briefly false in between;
+                    // taking focus right then would cancel that hand-over.
+                    onEditingChanged: Qt.callLater(function () {
+                        if (!dashboard.editing)
                             keyCatcher.forceActiveFocus();
-                    }
+                    })
                 }
             }
         }

@@ -2,6 +2,12 @@
 
 All notable changes to this plugin. Versions follow `manifest.json`; each is a tagged release on GitHub.
 
+## [0.8.2] - 2026-11-16
+
+### Fixed
+- The Settings text fields show a text cursor again. 0.8.1 made them read-only to Qt, and Qt draws no cursor in a read-only field, so the fields now draw their own.
+- Enter in the first box of Custom names or Daily limits moves to the second box. Before, focus fell back to the popup and the next keys you typed were taken as its shortcuts.
+
 ## [0.8.1] - 2026-11-16
 
 ### Security
